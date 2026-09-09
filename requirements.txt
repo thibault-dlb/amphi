@@ -1,0 +1,10 @@
+# Amphi — dépendances (Python 3.11, Windows, CPU uniquement)
+# Installé dans C:\Users\thibd\Amphi\.venv par install.ps1
+
+faster-whisper==1.2.1     # transcription (CTranslate2, int8 AVX-512 VNNI)
+PySide6==6.11.2           # interface Qt
+sounddevice==0.5.6        # capture micro (PortAudio / WASAPI)
+soundfile>=0.12.1         # écriture WAV/FLAC en flux
+numpy>=1.26,<3            # métrologie du signal (VU), partagé avec faster-whisper
+psutil>=5.9               # priorité process worker + mesure RAM au benchmark
+google-genai>=1.0.0       # résumé IA (Gemini 3.8 Flash) — optionnel à l'usage

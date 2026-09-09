@@ -1,0 +1,17 @@
+# Environnement & artefacts locaux
+.venv/
+__pycache__/
+*.pyc
+
+# Données locales (contiennent la clé API, l'index, les enregistrements en cours)
+config.json
+amphi.db
+amphi.db-*
+.staging/
+logs/
+.worker.lock
+.worker.stop
+.recording
+
+# Icône générée
+amphi/assets/
