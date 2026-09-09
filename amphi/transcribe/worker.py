@@ -15,6 +15,7 @@ import shutil
 import sys
 import time
 import logging
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 
@@ -346,15 +347,15 @@ def _sweep_done_staging(store: Store) -> None:
                 store.update(rec.id, staging_dir="")
 
 
-def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -> None:
-    """Fait avancer un job d'une étape.
+# Étapes servies par la boucle principale (CPU : faster-whisper) vs. par le pool
+# de résumés (I/O : appel réseau Gemini) — voir run().
+_TRANSCRIPTION_WORK = {Status.TRANSCRIBING, Status.PAUSED_NO_AC, Status.QUEUED}
+_SUMMARY_WORK = {Status.TRANSCRIBED, Status.SUMMARIZING}
 
-    La transcription + livraison du transcript et le résumé Gemini sont deux
-    passages séparés dans la boucle : une fois le transcript livré (statut
-    TRANSCRIBED), on rend la main pour qu'une transcription en attente puisse
-    démarrer sans attendre le retour de Gemini. Le résumé reprend plus tard,
-    quand il n'y a plus rien à transcrire (cf. _JOB_PRIORITY).
-    """
+
+def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -> None:
+    """Transcrit puis livre le transcript (statut → TRANSCRIBED). Le résumé Gemini
+    est traité à part, en parallèle (cf. _run_summary)."""
     work = Path(job.staging_dir) if job.staging_dir else None
     if not job.target_dir:
         raise RuntimeError(f"job {job.id} sans dossier cible")
@@ -368,14 +369,61 @@ def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -
     if not (target / "transcript.md").exists():
         if not work:
             raise FileNotFoundError("staging nettoyé mais transcript absent de la cible")
-        _finalize(job, cfg, store, work, target)
-        return  # transcript livré (statut TRANSCRIBED) — résumé au prochain tour
+        _finalize(job, cfg, store, work, target)  # pose le statut TRANSCRIBED
+    elif job.status != Status.TRANSCRIBED:
+        store.set_status(job.id, Status.TRANSCRIBED)  # reprise après crash post-livraison
 
-    _maybe_summarize(job, cfg, store, target)
 
-    fresh = store.get(job.id)
-    if fresh and fresh.status in (Status.DONE, Status.SUMMARY_FAILED):
-        _cleanup(store, job.id, work)
+def _run_summary(job_id: int, cfg: Config) -> None:
+    """Résumé Gemini d'un job, dans un thread dédié (connexion SQLite propre)."""
+    store = Store()
+    try:
+        job = store.get(job_id)
+        if job is None or not job.target_dir:
+            return
+        try:
+            _maybe_summarize(job, cfg, store, Path(job.target_dir))
+        except TranscriptionInterrupted:
+            store.set_status(job_id, Status.TRANSCRIBED)  # reporté (batterie) — retenté plus tard
+            log.info("Résumé du job %d reporté", job_id)
+            return
+        fresh = store.get(job_id)
+        if fresh and fresh.status in (Status.DONE, Status.SUMMARY_FAILED):
+            _cleanup(store, job_id, Path(job.staging_dir) if job.staging_dir else None)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Résumé du job %d en échec", job_id)
+        try:
+            store.set_status(
+                job_id, Status.SUMMARY_FAILED, error=f"{type(exc).__name__}: {exc}"[:500]
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        store.close()
+
+
+def _submit_summaries(
+    store: Store, cfg: Config, pool: ThreadPoolExecutor, in_flight: dict[int, Future]
+) -> None:
+    """Envoie au pool tout transcript livré en attente de résumé."""
+    if _should_stand_down(cfg):
+        return
+    for rec in store.active():
+        if rec.status in _SUMMARY_WORK and rec.id not in in_flight:
+            log.info("Résumé du job %d lancé en parallèle", rec.id)
+            in_flight[rec.id] = pool.submit(_run_summary, rec.id, cfg)
+
+
+def _reap(in_flight: dict[int, Future]) -> None:
+    for jid, fut in list(in_flight.items()):
+        if fut.done():
+            in_flight.pop(jid)
+            try:
+                fut.result()
+            except CancelledError:
+                log.info("Résumé du job %d annulé (arrêt du worker) — retenté au prochain lancement", jid)
+            except Exception:  # noqa: BLE001
+                log.exception("Thread de résumé du job %d terminé sur erreur", jid)
 
 
 def _fail(store: Store, job: Recording, exc: Exception) -> None:
@@ -403,19 +451,33 @@ def run(idle_exit: float = IDLE_EXIT_S, once: bool = False) -> int:
     engine: WhisperEngine | None = None
     idle_since = time.monotonic()
 
+    # Les résumés Gemini (appel réseau, peu de CPU) tournent dans un thread à part
+    # pour ne pas bloquer la transcription suivante. max_workers=1 : un résumé à la
+    # fois, en parallèle de la transcription en cours sur le thread principal.
+    summary_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="amphi-summary")
+    in_flight: dict[int, Future] = {}
+
     try:
         while True:
             if WORKER_STOP_FLAG.exists():
                 log.info("Arrêt demandé — sortie.")
                 break
             _touch_lock()
+            _reap(in_flight)
 
             cfg = Config.load()
+            _submit_summaries(store, cfg, summary_pool, in_flight)
+
             job = store.next_job()
+            if job is not None and job.status not in _TRANSCRIPTION_WORK:
+                job = None  # les résumés partent dans le pool, pas dans la boucle
 
             if job is None:
+                if in_flight:
+                    time.sleep(1.5)  # un résumé tourne encore : on reste en vie et on récolte
+                    continue
                 if once or time.monotonic() - idle_since > idle_exit:
-                    log.info("File vide — sortie.")
+                    log.info("Plus rien à traiter — sortie.")
                     FORCE_BATTERY_FLAG.unlink(missing_ok=True)  # dérogation batterie consommée
                     break
                 time.sleep(4.0)
@@ -443,8 +505,6 @@ def run(idle_exit: float = IDLE_EXIT_S, once: bool = False) -> int:
             try:
                 if engine is None:
                     engine = _make_engine(cfg)
-                # _process règle lui-même le statut de chaque étape (TRANSCRIBING /
-                # SUMMARIZING / DONE) — inutile de sortir de PAUSED_NO_AC ici.
                 _process(job, cfg, store, engine)
             except TranscriptionInterrupted:
                 if WORKER_STOP_FLAG.exists():
@@ -465,6 +525,10 @@ def run(idle_exit: float = IDLE_EXIT_S, once: bool = False) -> int:
             if once:
                 break
     finally:
+        # on laisse le résumé en cours se terminer (transcript déjà livré de toute
+        # façon) ; ceux encore en file d'attente du pool sont annulés.
+        summary_pool.shutdown(wait=True, cancel_futures=True)
+        _reap(in_flight)
         store.close()
         _release_lock()
         log.info("Worker terminé.")
