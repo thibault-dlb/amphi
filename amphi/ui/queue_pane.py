@@ -31,6 +31,8 @@ class QueueItem(QFrame):
     retry = Signal(int)
     retry_summary = Signal(int)
     remove = Signal(int)
+    pause = Signal(int)
+    resume = Signal(int)
 
     def __init__(self, rec: Recording, parent=None) -> None:
         super().__init__(parent)
@@ -83,12 +85,16 @@ class QueueItem(QFrame):
             Status.TRANSCRIBE_FAILED: COLORS["rec"],
             Status.SUMMARY_FAILED: COLORS["amber"],
             Status.PAUSED_NO_AC: COLORS["amber"],
+            Status.PAUSED_USER: COLORS["amber"],
         }.get(r.status, COLORS["text"])
 
         label = {
             Status.QUEUED: "En attente de transcription",
             Status.TRANSCRIBING: r.stage or "Transcription…",
             Status.PAUSED_NO_AC: "En pause — laptop sur batterie",
+            Status.PAUSED_USER: (
+                f"En pause — {r.stage}" if r.stage else "En pause"
+            ),
             Status.TRANSCRIBED: "Transcript prêt — résumé à suivre",
             Status.SUMMARIZING: "Résumé Gemini en cours…",
             Status.DONE: "✓ Terminé",
@@ -100,7 +106,7 @@ class QueueItem(QFrame):
         if r.error:
             self._status.setToolTip(r.error)
 
-        if r.status == Status.TRANSCRIBING and r.progress > 0:
+        if r.status in (Status.TRANSCRIBING, Status.PAUSED_USER) and r.progress > 0:
             self._bar.setRange(0, 100)
             self._bar.setValue(int(r.progress * 100))
             self._bar.show()
@@ -118,6 +124,10 @@ class QueueItem(QFrame):
         if r.status == Status.TRANSCRIBE_FAILED:
             self._btn("Réessayer", lambda: self.retry.emit(r.id))
             self._btn("Retirer", lambda: self.remove.emit(r.id))
+        if r.status in Status.PAUSABLE:
+            self._btn("⏸  Pause", lambda: self.pause.emit(r.id))
+        elif r.status == Status.PAUSED_USER:
+            self._btn("▶  Reprendre", lambda: self.resume.emit(r.id))
         self._buttons.addStretch(1)
 
     def update_from(self, rec: Recording) -> None:
@@ -130,6 +140,8 @@ class QueuePane(QFrame):
     retry_requested = Signal(int)
     retry_summary_requested = Signal(int)
     remove_requested = Signal(int)
+    pause_requested = Signal(int)
+    resume_requested = Signal(int)
     work_available = Signal()   # il y a quelque chose à traiter -> (re)lancer le worker
     force_battery_toggled = Signal(bool)
 
@@ -246,6 +258,8 @@ class QueuePane(QFrame):
             w.retry.connect(self.retry_requested)
             w.retry_summary.connect(self.retry_summary_requested)
             w.remove.connect(self.remove_requested)
+            w.pause.connect(self.pause_requested)
+            w.resume.connect(self.resume_requested)
             self._items[rec.id] = w
             self._list.addWidget(w)
         self._list.addStretch(1)

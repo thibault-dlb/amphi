@@ -14,20 +14,26 @@ class Status:
     QUEUED = "queued"                # validé, en attente de transcription
     TRANSCRIBING = "transcribing"    # transcription en cours
     PAUSED_NO_AC = "paused_no_ac"    # en pause : laptop sur batterie
+    PAUSED_USER = "paused_user"      # en pause : demandé par l'utilisateur
     TRANSCRIBED = "transcribed"      # transcript.md écrit, avant résumé
     SUMMARIZING = "summarizing"      # appel Gemini en cours
     DONE = "done"                    # transcript (+ résumé) livrés
     TRANSCRIBE_FAILED = "transcribe_failed"
     SUMMARY_FAILED = "summary_failed"  # transcript OK, résumé en échec
 
+    # PAUSED_USER volontairement hors ACTIONABLE : le worker ne doit pas le
+    # reprendre tout seul — il attend un clic « Reprendre ».
     ACTIONABLE = {QUEUED, TRANSCRIBING, PAUSED_NO_AC, TRANSCRIBED, SUMMARIZING}
     TERMINAL = {DONE, TRANSCRIBE_FAILED}
+    # Étapes où l'utilisateur peut mettre la transcription en pause.
+    PAUSABLE = {QUEUED, TRANSCRIBING, PAUSED_NO_AC}
 
     LABELS_FR = {
         RECORDING: "enregistrement",
         QUEUED: "en attente",
         TRANSCRIBING: "transcription",
         PAUSED_NO_AC: "en pause (batterie)",
+        PAUSED_USER: "en pause",
         TRANSCRIBED: "transcript prêt",
         SUMMARIZING: "résumé…",
         DONE: "terminé",

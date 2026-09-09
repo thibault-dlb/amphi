@@ -188,6 +188,8 @@ class MainWindow(QMainWindow):
         self.queue_pane.retry_requested.connect(self._retry)
         self.queue_pane.retry_summary_requested.connect(self._retry_summary)
         self.queue_pane.remove_requested.connect(self._remove)
+        self.queue_pane.pause_requested.connect(self._pause_transcription)
+        self.queue_pane.resume_requested.connect(self._resume_transcription)
         self.queue_pane.work_available.connect(self.ensure_worker)
         self.queue_pane.force_battery_toggled.connect(self.set_force_battery)
 
@@ -470,6 +472,25 @@ class MainWindow(QMainWindow):
             shutil.rmtree(rec.staging_dir, ignore_errors=True)
         self.store.delete(rec_id)
         self.queue_pane.refresh()
+
+    def _pause_transcription(self, rec_id: int) -> None:
+        rec = self.store.get(rec_id)
+        if not rec or rec.status not in Status.PAUSABLE:
+            return
+        # Le worker relit le statut après chaque segment : il s'arrête de lui-même,
+        # le checkpoint (segments.jsonl) est déjà sur disque.
+        self.store.set_status(rec_id, Status.PAUSED_USER)
+        log.info("Transcription %d mise en pause par l'utilisateur.", rec_id)
+        self.queue_pane.refresh()
+
+    def _resume_transcription(self, rec_id: int) -> None:
+        rec = self.store.get(rec_id)
+        if not rec or rec.status != Status.PAUSED_USER:
+            return
+        self.store.update(rec_id, status=Status.QUEUED, error="")
+        log.info("Transcription %d reprise.", rec_id)
+        self.queue_pane.refresh()
+        self.ensure_worker()
 
     # ----------------------------------------------------------- réglages
     def _open_settings(self) -> None:

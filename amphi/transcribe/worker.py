@@ -152,8 +152,15 @@ def _should_stand_down(cfg: Config) -> bool:
     return _on_battery_blocked(cfg)
 
 
-def _cancel_fn(cfg: Config):
-    return lambda: _should_stand_down(cfg)
+def _user_paused(store: Store, job_id: int) -> bool:
+    fresh = store.get(job_id)
+    return fresh is not None and fresh.status == Status.PAUSED_USER
+
+
+def _cancel_fn(cfg: Config, store: Store, job_id: int):
+    """Interrompt la passe en cours si le worker doit s'effacer (batterie /
+    enregistrement / arrêt) ou si l'utilisateur a cliqué « Pause »."""
+    return lambda: _should_stand_down(cfg) or _user_paused(store, job_id)
 
 
 def _transcribe(job: Recording, cfg: Config, store: Store, engine: WhisperEngine, work: Path) -> None:
@@ -222,7 +229,7 @@ def _transcribe(job: Recording, cfg: Config, store: Store, engine: WhisperEngine
         language=(job.langue or cfg.default_langue or "fr"),
         initial_prompt=prompt,
         on_segment=_on_seg,
-        should_cancel=_cancel_fn(cfg),
+        should_cancel=_cancel_fn(cfg, store, job.id),
     )
     for _ in seg_iter:  # la consommation déclenche _on_seg ; l'interruption remonte
         pass
@@ -346,6 +353,8 @@ def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -
     target = Path(job.target_dir)
 
     if work and not (work / "transcript.md").exists():
+        if _user_paused(store, job.id):
+            raise TranscriptionInterrupted  # pause demandée pile avant le démarrage
         _transcribe(job, cfg, store, engine, work)
 
     if not (target / "transcript.md").exists():
@@ -432,6 +441,11 @@ def run(idle_exit: float = IDLE_EXIT_S, once: bool = False) -> int:
                 if WORKER_STOP_FLAG.exists():
                     log.info("Interrompu par l'arrêt — checkpoint conservé.")
                     break
+                if _user_paused(store, job.id):
+                    log.info("Job %d mis en pause par l'utilisateur — checkpoint conservé.", job.id)
+                    if once:
+                        break
+                    continue
                 store.set_status(job.id, Status.PAUSED_NO_AC)
                 log.info("Job %d interrompu (batterie/enregistrement) — reprise plus tard", job.id)
                 time.sleep(BATTERY_POLL_S)
