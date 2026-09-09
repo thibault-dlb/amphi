@@ -347,6 +347,14 @@ def _sweep_done_staging(store: Store) -> None:
 
 
 def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -> None:
+    """Fait avancer un job d'une étape.
+
+    La transcription + livraison du transcript et le résumé Gemini sont deux
+    passages séparés dans la boucle : une fois le transcript livré (statut
+    TRANSCRIBED), on rend la main pour qu'une transcription en attente puisse
+    démarrer sans attendre le retour de Gemini. Le résumé reprend plus tard,
+    quand il n'y a plus rien à transcrire (cf. _JOB_PRIORITY).
+    """
     work = Path(job.staging_dir) if job.staging_dir else None
     if not job.target_dir:
         raise RuntimeError(f"job {job.id} sans dossier cible")
@@ -361,6 +369,7 @@ def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -
         if not work:
             raise FileNotFoundError("staging nettoyé mais transcript absent de la cible")
         _finalize(job, cfg, store, work, target)
+        return  # transcript livré (statut TRANSCRIBED) — résumé au prochain tour
 
     _maybe_summarize(job, cfg, store, target)
 
