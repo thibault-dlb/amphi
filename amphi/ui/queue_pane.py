@@ -84,6 +84,7 @@ class QueueItem(QFrame):
             Status.DONE: COLORS["green"],
             Status.TRANSCRIBE_FAILED: COLORS["rec"],
             Status.SUMMARY_FAILED: COLORS["amber"],
+            Status.INDEX_FAILED: COLORS["amber"],
             Status.PAUSED_NO_AC: COLORS["amber"],
             Status.PAUSED_USER: COLORS["amber"],
         }.get(r.status, COLORS["text"])
@@ -97,9 +98,11 @@ class QueueItem(QFrame):
             ),
             Status.TRANSCRIBED: "Transcript prêt — résumé à suivre",
             Status.SUMMARIZING: "Résumé Gemini en cours…",
+            Status.INDEXING: "Index des thèmes en cours…",
             Status.DONE: "✓ Terminé",
             Status.TRANSCRIBE_FAILED: "✗ Échec de la transcription",
             Status.SUMMARY_FAILED: "✓ Transcript OK · résumé en échec",
+            Status.INDEX_FAILED: "✓ Transcript + résumé OK · index en échec",
         }.get(r.status, r.status)
         self._status.setText(label)
         self._status.setStyleSheet(f"font-size:12px;color:{colour};")
@@ -110,17 +113,21 @@ class QueueItem(QFrame):
             self._bar.setRange(0, 100)
             self._bar.setValue(int(r.progress * 100))
             self._bar.show()
-        elif r.status in (Status.SUMMARIZING, Status.QUEUED):
+        elif r.status in (Status.SUMMARIZING, Status.INDEXING, Status.QUEUED):
             self._bar.setRange(0, 0)  # indéterminé
             self._bar.show()
         else:
             self._bar.hide()
 
         self._clear_buttons()
-        if r.status in (Status.DONE, Status.TRANSCRIBED, Status.SUMMARY_FAILED) and r.target_dir:
+        deliverable = (Status.DONE, Status.TRANSCRIBED, Status.SUMMARY_FAILED, Status.INDEX_FAILED)
+        if r.status in deliverable and r.target_dir:
             self._btn("Ouvrir", lambda: self.open_folder.emit(r.target_dir))
         if r.status == Status.SUMMARY_FAILED:
             self._btn("Relancer le résumé", lambda: self.retry_summary.emit(r.id))
+        if r.status == Status.INDEX_FAILED:
+            # même relance : resume.md existe déjà, seul l'index est refait
+            self._btn("Relancer l'index", lambda: self.retry_summary.emit(r.id))
         if r.status == Status.TRANSCRIBE_FAILED:
             self._btn("Réessayer", lambda: self.retry.emit(r.id))
             self._btn("Retirer", lambda: self.remove.emit(r.id))

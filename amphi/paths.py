@@ -23,6 +23,7 @@ WORKER_LOCK = APP_DIR / ".worker.lock"
 WORKER_STOP_FLAG = APP_DIR / ".worker.stop"
 RECORDING_FLAG = APP_DIR / ".recording"   # présent = enregistrement en cours, worker au repos
 FORCE_BATTERY_FLAG = APP_DIR / ".force_battery"  # présent = transcrire même sur batterie
+INDEX_LOCK = APP_DIR / ".index.lock"  # présent = index des thèmes en cours d'écriture
 
 _FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _WS = re.compile(r"\s+")

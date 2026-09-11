@@ -77,12 +77,34 @@ resume.md        plan + synthèse + formules (si Gemini configuré)
 meta.json        métadonnées
 ```
 
+### Index des thèmes
+
+Après le résumé, une 2ᵉ requête Gemini met à jour l'index des thèmes de la matière, pensé pour
+qu'un agent IA (Claude Code…) retrouve où chaque notion est traitée sans relire les transcripts :
+
+```
+<Matière>\INDEX.md                          thèmes → passages (cours, lignes du transcript, nature, note)
+<Matière>\Enregistrements\index_themes.json données de l'index (ne pas éditer)
+```
+
+Gemini reçoit la liste des thèmes déjà indexés et le transcript du nouveau cours, lignes
+numérotées ; il ne renvoie que l'apport de ce cours, que l'app fusionne dans l'index. Les
+références des cours précédents ne repassent jamais par le modèle. Désactivable dans
+Réglages > Résumé IA. En cas d'échec, bouton « Relancer l'index » dans la file.
+
+Cours transcrits avant l'activation : Réglages > Résumé IA > « Indexer les cours déjà
+transcrits… », ou
+
+```powershell
+.\.venv\Scripts\python -m amphi.transcribe.themes --all   # --matiere NOM · --force · --dry-run
+```
+
 ## Architecture
 
 ```
 amphi/
   audio/       capture (pause/marqueurs/anti-crash), encodage FLAC
-  transcribe/  moteur faster-whisper, worker autonome, rendu Markdown, résumé Gemini
+  transcribe/  moteur faster-whisper, worker autonome, rendu Markdown, résumé + index des thèmes (Gemini)
   library/     index SQLite, découverte des matières
   ui/          fenêtre compacte ScreenPad, dialogues
 tools/

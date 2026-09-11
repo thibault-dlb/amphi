@@ -29,6 +29,7 @@ from ..models import RecordingMeta, Status
 from ..paths import FORCE_BATTERY_FLAG, RECORDING_FLAG, WORKER_LOCK, WORKER_STOP_FLAG
 from ..power import on_ac_power
 from . import summarize as summ
+from . import themes
 from .engine import Segment, TranscriptionInterrupted, WhisperEngine
 from .markdown import build_transcript_md
 
@@ -282,8 +283,9 @@ def _finalize(job: Recording, cfg: Config, store: Store, work: Path, target: Pat
 
 def _maybe_summarize(job: Recording, cfg: Config, store: Store, target: Path) -> None:
     resume_md = target / "resume.md"
-    if resume_md.exists():
-        store.update(job.id, resume_path=str(resume_md), status=Status.DONE, stage="terminé")
+    if resume_md.exists():  # déjà fait (reprise, relance de l'index) : on passe à l'index
+        store.update(job.id, resume_path=str(resume_md))
+        _maybe_index(job, cfg, store, target)
         return
 
     if not (cfg.gemini.is_active() and cfg.gemini.auto_after_transcription):
@@ -304,15 +306,48 @@ def _maybe_summarize(job: Recording, cfg: Config, store: Store, target: Path) ->
     store.set_progress(job.id, progress=1.0, stage="résumé Gemini…")
     try:
         content = summ.summarize(transcript_text, job.meta(), cfg.gemini)
-        resume_md.write_text(content, encoding="utf-8")
-        store.update(job.id, resume_path=str(resume_md), status=Status.DONE, stage="terminé")
-        log.info("Résumé écrit : %s", resume_md)
     except summ.SummarySkipped as exc:
         log.info("Résumé non disponible (%s) — transcript livré seul", exc)
         store.update(job.id, status=Status.DONE, stage="terminé (sans résumé)")
+        return
     except summ.SummaryError as exc:
         log.warning("Résumé en échec (job %d) : %s", job.id, exc)
         store.set_status(job.id, Status.SUMMARY_FAILED, error=str(exc)[:500])
+        return
+    resume_md.write_text(content, encoding="utf-8")
+    store.update(job.id, resume_path=str(resume_md))
+    log.info("Résumé écrit : %s", resume_md)
+    _maybe_index(job, cfg, store, target)
+
+
+def _maybe_index(job: Recording, cfg: Config, store: Store, target: Path) -> None:
+    """2ᵉ requête Gemini, après le résumé : met à jour l'index des thèmes de la matière."""
+    transcript = target / "transcript.md"
+    g = cfg.gemini
+    if not (g.is_active() and g.auto_after_transcription and g.index_themes):
+        store.update(job.id, status=Status.DONE, stage="terminé")
+        return
+    if themes.is_indexed(transcript):
+        store.update(job.id, status=Status.DONE, stage="terminé")
+        return
+
+    if _on_battery_blocked(cfg):
+        raise TranscriptionInterrupted  # comme le résumé : on attend le secteur
+
+    store.set_status(job.id, Status.INDEXING)
+    store.set_progress(job.id, progress=1.0, stage="index des thèmes…")
+    try:
+        count = themes.index_course(transcript, job.meta(), g)
+    except summ.SummarySkipped as exc:
+        log.info("Index des thèmes non mis à jour (%s)", exc)
+        store.update(job.id, status=Status.DONE, stage="terminé (sans index)")
+        return
+    except summ.SummaryError as exc:
+        log.warning("Index des thèmes en échec (job %d) : %s", job.id, exc)
+        store.set_status(job.id, Status.INDEX_FAILED, error=str(exc)[:500])
+        return
+    store.update(job.id, status=Status.DONE, stage="terminé")
+    log.info("Index des thèmes à jour (job %d, %d thème(s))", job.id, count)
 
 
 def _remove_tree(path: Path, attempts: int = 6) -> bool:
@@ -348,9 +383,9 @@ def _sweep_done_staging(store: Store) -> None:
 
 
 # Étapes servies par la boucle principale (CPU : faster-whisper) vs. par le pool
-# de résumés (I/O : appel réseau Gemini) — voir run().
+# de résumés (I/O : appels réseau Gemini, résumé puis index des thèmes) — voir run().
 _TRANSCRIPTION_WORK = {Status.TRANSCRIBING, Status.PAUSED_NO_AC, Status.QUEUED}
-_SUMMARY_WORK = {Status.TRANSCRIBED, Status.SUMMARIZING}
+_SUMMARY_WORK = {Status.TRANSCRIBED, Status.SUMMARIZING, Status.INDEXING}
 
 
 def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -> None:
@@ -375,7 +410,7 @@ def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -
 
 
 def _run_summary(job_id: int, cfg: Config) -> None:
-    """Résumé Gemini d'un job, dans un thread dédié (connexion SQLite propre)."""
+    """Résumé puis index des thèmes d'un job, dans un thread dédié (connexion SQLite propre)."""
     store = Store()
     try:
         job = store.get(job_id)
@@ -388,14 +423,18 @@ def _run_summary(job_id: int, cfg: Config) -> None:
             log.info("Résumé du job %d reporté", job_id)
             return
         fresh = store.get(job_id)
-        if fresh and fresh.status in (Status.DONE, Status.SUMMARY_FAILED):
+        if fresh and fresh.status in (Status.DONE, Status.SUMMARY_FAILED, Status.INDEX_FAILED):
             _cleanup(store, job_id, Path(job.staging_dir) if job.staging_dir else None)
     except Exception as exc:  # noqa: BLE001
-        log.exception("Résumé du job %d en échec", job_id)
+        log.exception("Résumé ou index du job %d en échec", job_id)
         try:
-            store.set_status(
-                job_id, Status.SUMMARY_FAILED, error=f"{type(exc).__name__}: {exc}"[:500]
+            current = store.get(job_id)
+            failed = (
+                Status.INDEX_FAILED
+                if current and current.status == Status.INDEXING
+                else Status.SUMMARY_FAILED
             )
+            store.set_status(job_id, failed, error=f"{type(exc).__name__}: {exc}"[:500])
         except Exception:  # noqa: BLE001
             pass
     finally:

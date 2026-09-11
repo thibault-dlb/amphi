@@ -44,6 +44,7 @@ class GeminiConfig:
     )
     enabled: bool = True                # sans clé, reste inactif de toute façon
     auto_after_transcription: bool = True
+    index_themes: bool = True           # 2ᵉ requête après le résumé : <matière>/INDEX.md
     thinking_budget: int = 4096         # -1 = dynamique ; 0 = désactivé
     prompt_override: str = ""           # remplace le prompt système par défaut si non vide
     acknowledged_privacy: bool = False  # l'utilisateur a vu l'avertissement "envoi en ligne"

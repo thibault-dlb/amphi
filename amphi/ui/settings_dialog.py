@@ -256,6 +256,21 @@ class SettingsDialog(QDialog):
         self._g_auto.setChecked(self.cfg.gemini.auto_after_transcription)
         form.addRow(self._g_auto)
 
+        self._g_index = QCheckBox("Construire l'index des thèmes de chaque matière (2ᵉ requête Gemini)")
+        self._g_index.setChecked(self.cfg.gemini.index_themes)
+        form.addRow(self._g_index)
+        index_now = QPushButton("Indexer les cours déjà transcrits…")
+        index_now.clicked.connect(self._run_index_backfill)
+        form.addRow("", index_now)
+        ihint = QLabel(
+            "Après chaque résumé, le fichier INDEX.md de la matière liste les thèmes vus et les "
+            "lignes des transcripts où ils sont traités (nature du passage + note), pour Claude "
+            "ou toi. Le bouton rattrape les cours transcrits avant (clé enregistrée requise)."
+        )
+        ihint.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
+        ihint.setWordWrap(True)
+        form.addRow("", ihint)
+
         self._g_think = QSpinBox()
         self._g_think.setRange(-1, 24576)
         self._g_think.setSingleStep(1024)
@@ -416,6 +431,15 @@ class SettingsDialog(QDialog):
         self._beam.setValue(fresh.engine.beam_size)
         self._bench_notes.setText(fresh.engine.benchmark_notes or "—")
 
+    # -- index des thèmes ----------------------------------------------
+    def _run_index_backfill(self) -> None:
+        dlg = _ProcessDialog(
+            "Index des thèmes",
+            [sys.executable, "-u", "-m", "amphi.transcribe.themes", "--all"],
+            self,
+        )
+        dlg.exec()
+
     # -- Gemini réseau ---------------------------------------------
     def _test_key(self) -> None:
         from ..config import GeminiConfig
@@ -480,6 +504,7 @@ class SettingsDialog(QDialog):
         c.gemini.api_key = self._g_key.text().strip()
         c.gemini.model = self._g_model.currentText().strip() or "gemini-flash-latest"
         c.gemini.auto_after_transcription = self._g_auto.isChecked()
+        c.gemini.index_themes = self._g_index.isChecked()
         c.gemini.thinking_budget = self._g_think.value()
         c.gemini.prompt_override = self._g_prompt.toPlainText().strip()
         if c.gemini.api_key:
@@ -517,6 +542,7 @@ class _ProcessDialog(QDialog):
         lay.addWidget(self._bb)
 
         self._proc = QProcess(self)
+        self._proc.setWorkingDirectory(str(APP_DIR))  # `python -m amphi…` doit trouver le paquet
         self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._proc.readyReadStandardOutput.connect(self._read)
         self._proc.finished.connect(self._finished)

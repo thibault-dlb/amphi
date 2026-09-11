@@ -45,14 +45,15 @@ CREATE INDEX IF NOT EXISTS ix_recordings_created ON recordings(created_at);
 """
 
 # Ordre de service du worker : les transcriptions passent avant les résumés
-# Gemini. Un résumé (TRANSCRIBED / SUMMARIZING) est un appel réseau qui ne doit
-# pas retarder la transcription suivante — il attend que la file de transcription
-# soit vide.
+# Gemini. Un résumé ou un index (TRANSCRIBED / SUMMARIZING / INDEXING) est un appel
+# réseau qui ne doit pas retarder la transcription suivante — il attend que la file
+# de transcription soit vide.
 _JOB_PRIORITY = {
     Status.TRANSCRIBING: 0,   # reprise d'une transcription entamée
     Status.PAUSED_NO_AC: 1,   # transcription en pause (batterie) à reprendre
     Status.QUEUED: 2,         # nouvelle transcription
     Status.SUMMARIZING: 3,    # reprise d'un résumé entamé
+    Status.INDEXING: 3,       # reprise d'un index des thèmes entamé
     Status.TRANSCRIBED: 4,    # transcript livré, résumé à faire
 }
 

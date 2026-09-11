@@ -12,6 +12,7 @@ logs/
 .worker.lock
 .worker.stop
 .recording
+.index.lock
 
 # Icône générée
 amphi/assets/

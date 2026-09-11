@@ -16,14 +16,16 @@ class Status:
     PAUSED_NO_AC = "paused_no_ac"    # en pause : laptop sur batterie
     PAUSED_USER = "paused_user"      # en pause : demandé par l'utilisateur
     TRANSCRIBED = "transcribed"      # transcript.md écrit, avant résumé
-    SUMMARIZING = "summarizing"      # appel Gemini en cours
-    DONE = "done"                    # transcript (+ résumé) livrés
+    SUMMARIZING = "summarizing"      # appel Gemini en cours (résumé)
+    INDEXING = "indexing"            # appel Gemini en cours (index des thèmes de la matière)
+    DONE = "done"                    # transcript (+ résumé, + index) livrés
     TRANSCRIBE_FAILED = "transcribe_failed"
     SUMMARY_FAILED = "summary_failed"  # transcript OK, résumé en échec
+    INDEX_FAILED = "index_failed"      # transcript + résumé OK, index des thèmes en échec
 
     # PAUSED_USER volontairement hors ACTIONABLE : le worker ne doit pas le
     # reprendre tout seul — il attend un clic « Reprendre ».
-    ACTIONABLE = {QUEUED, TRANSCRIBING, PAUSED_NO_AC, TRANSCRIBED, SUMMARIZING}
+    ACTIONABLE = {QUEUED, TRANSCRIBING, PAUSED_NO_AC, TRANSCRIBED, SUMMARIZING, INDEXING}
     TERMINAL = {DONE, TRANSCRIBE_FAILED}
     # Étapes où l'utilisateur peut mettre la transcription en pause.
     PAUSABLE = {QUEUED, TRANSCRIBING, PAUSED_NO_AC}
@@ -36,9 +38,11 @@ class Status:
         PAUSED_USER: "en pause",
         TRANSCRIBED: "transcript prêt",
         SUMMARIZING: "résumé…",
+        INDEXING: "index des thèmes…",
         DONE: "terminé",
         TRANSCRIBE_FAILED: "échec transcription",
         SUMMARY_FAILED: "résumé échoué",
+        INDEX_FAILED: "index échoué",
     }
 
 

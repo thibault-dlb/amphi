@@ -150,40 +150,60 @@ def _extract_text(resp) -> tuple[str, str]:
     return text.strip(), reason
 
 
-def _one_call(client, types, model: str, system: str, user: str, thinking: int) -> str:
+def _is_bad_schema(exc: Exception) -> bool:
+    """Le modèle (de repli) refuse le schéma de réponse JSON."""
+    s = str(exc).lower()
+    return ("400" in s or "invalid_argument" in s) and any(w in s for w in ("schema", "json", "mime"))
+
+
+def _one_call(
+    client, types, model: str, system: str, user: str, thinking: int,
+    json_schema: dict | None = None,
+) -> str:
     cfg_kwargs: dict = dict(
         system_instruction=system, temperature=0.3, max_output_tokens=32000
     )
+    if json_schema is not None:
+        cfg_kwargs["response_mime_type"] = "application/json"
+        cfg_kwargs["response_schema"] = json_schema
     if thinking != 0:
         try:
             cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking)
         except Exception:  # noqa: BLE001
             pass
-    try:
-        resp = client.models.generate_content(
-            model=model, contents=user,
-            config=types.GenerateContentConfig(**cfg_kwargs),
-        )
-    except Exception as exc:  # noqa: BLE001
-        if "thinking_config" in cfg_kwargs and _is_bad_kwarg(exc):
-            cfg_kwargs.pop("thinking_config")
+    while True:
+        try:
             resp = client.models.generate_content(
                 model=model, contents=user,
                 config=types.GenerateContentConfig(**cfg_kwargs),
             )
-        else:
-            raise
+            break
+        except Exception as exc:  # noqa: BLE001
+            # option refusée par ce modèle : on la retire et on retente (une de moins par tour)
+            if "thinking_config" in cfg_kwargs and _is_bad_kwarg(exc):
+                cfg_kwargs.pop("thinking_config")
+            elif "response_schema" in cfg_kwargs and _is_bad_schema(exc):
+                log.info("%s refuse le schéma JSON — nouvel essai sans schéma", model)
+                cfg_kwargs.pop("response_schema")  # JSON libre : le prompt décrit le format
+            else:
+                raise
     text, reason = _extract_text(resp)
     if text:
         return text
     if reason == "MAX_TOKENS" and thinking != 0:
         # le raisonnement a mangé tout le budget : on réessaie sans raisonnement
-        return _one_call(client, types, model, system, user, thinking=0)
+        return _one_call(client, types, model, system, user, 0, json_schema)
     raise SummaryError(f"réponse vide de {model} (finish_reason={reason or 'inconnu'})")
 
 
-def _generate(gcfg: GeminiConfig, system: str, user: str) -> tuple[str, str]:
-    """Renvoie (résumé, modèle réellement utilisé)."""
+def generate(
+    gcfg: GeminiConfig, system: str, user: str, json_schema: dict | None = None
+) -> tuple[str, str]:
+    """Appel Gemini avec relances sur saturation et modèles de repli.
+
+    Renvoie (texte, modèle réellement utilisé). Avec `json_schema`, la réponse est du JSON
+    contraint par ce schéma (index des thèmes).
+    """
     genai = _client(gcfg.api_key)
     from google.genai import types  # noqa: PLC0415
 
@@ -194,9 +214,11 @@ def _generate(gcfg: GeminiConfig, system: str, user: str) -> tuple[str, str]:
     for mi, model in enumerate(models):
         for attempt in range(4):
             try:
-                out = _one_call(client, types, model, system, user, gcfg.thinking_budget)
+                out = _one_call(
+                    client, types, model, system, user, gcfg.thinking_budget, json_schema
+                )
                 if mi > 0:
-                    log.info("Résumé via le modèle de repli %s", model)
+                    log.info("Réponse via le modèle de repli %s", model)
                 return out, model
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
@@ -258,5 +280,5 @@ def summarize(transcript_md: str, meta: RecordingMeta, gcfg: GeminiConfig) -> st
         f"Transcription automatique à synthétiser :\n\n{body_in}"
     )
     log.info("Résumé Gemini (%s) : ~%d caractères en entrée", gcfg.model, len(user))
-    text, model_used = _generate(gcfg, system, user)
+    text, model_used = generate(gcfg, system, user)
     return _assemble(meta, text, model_used)
