@@ -92,6 +92,7 @@ class WhisperEngine:
         *,
         language: str,
         initial_prompt: str = "",
+        hotwords: str = "",
         on_segment: Callable[[Segment], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
     ) -> tuple[Iterator[Segment], TranscribeInfo]:
@@ -106,11 +107,17 @@ class WhisperEngine:
         opts = dict(_DECODE)
         opts["beam_size"] = self.beam_size
         opts["best_of"] = self.beam_size
+        if hotwords:
+            # hotwords (jusqu'à 223 tokens) + texte précédent (jusqu'à 223) + sot_sequence
+            # approchent le max_length de 448 du modèle — le vocabulaire remplace alors
+            # le contexte du texte précédent plutôt que de s'y ajouter.
+            opts["condition_on_previous_text"] = False
 
         raw_segments, info = self._model.transcribe(
             str(audio_path),
             language=language,
             initial_prompt=initial_prompt or None,
+            hotwords=hotwords or None,
             vad_filter=self.vad_filter,
             vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=200),
             **opts,

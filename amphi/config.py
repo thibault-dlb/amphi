@@ -97,6 +97,37 @@ class Config:
     def matiere_prompt(self, matiere: str) -> str:
         return (self.matiere_prompts.get(matiere) or "").strip()
 
+    def matiere_vocabulaire_path(self, matiere: str, niveau: str | None = None) -> Path:
+        from .paths import sanitize_component
+
+        niveau = self.niveau if niveau is None else niveau
+        return (
+            self.courses_root_path()
+            / sanitize_component(niveau, fallback="Divers")
+            / sanitize_component(matiere, fallback="Divers")
+            / self.recordings_subdir
+            / "vocabulaire.txt"
+        )
+
+    def matiere_vocabulaire(self, matiere: str, niveau: str | None = None) -> str:
+        """Vocabulaire technique de la matière, pour `hotwords` (faster-whisper).
+
+        Fichier texte éditable à la main, à côté de index_themes.json. Seule la
+        1re ligne non vide qui ne commence pas par « # » est envoyée à Whisper —
+        les lignes « # » sont des commentaires / une réserve de termes pour la
+        suite du cours, ignorées ici. Fichier absent, vide, ou ne contenant que
+        des commentaires → pas de hotwords (comportement inchangé)."""
+        path = self.matiere_vocabulaire_path(matiere, niveau)
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return ""
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                return line
+        return ""
+
     def target_dir_for(
         self, matiere: str, date: str, titre: str, niveau: str | None = None
     ) -> Path:

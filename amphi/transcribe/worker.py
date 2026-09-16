@@ -179,6 +179,7 @@ def _transcribe(job: Recording, cfg: Config, store: Store, engine: WhisperEngine
     src = capture
     resume_from = 0.0
     prompt = cfg.matiere_prompt(job.matiere)
+    hotwords = cfg.matiere_vocabulaire(job.matiere, job.niveau)
 
     # Reprise seulement si le checkpoint est assez loin ET que le trim réussit ;
     # sinon on repart de zéro avec un jsonl vierge (pas de segments en double).
@@ -230,6 +231,7 @@ def _transcribe(job: Recording, cfg: Config, store: Store, engine: WhisperEngine
         src,
         language=(job.langue or cfg.default_langue or "fr"),
         initial_prompt=prompt,
+        hotwords=hotwords,
         on_segment=_on_seg,
         should_cancel=_cancel_fn(cfg, store, job.id),
     )
@@ -260,11 +262,16 @@ def _finalize(job: Recording, cfg: Config, store: Store, work: Path, target: Pat
     meta.duree_s = job.duree_s or encode.probe_duration(work / "capture.wav") or meta.duree_s
     meta.app_version = __version__
     payload = asdict(meta)
+    job_hotwords = cfg.matiere_vocabulaire(job.matiere, job.niveau)
     payload["engine"] = {
         "model": cfg.engine.model,
         "compute_type": cfg.engine.compute_type,
         "cpu_threads": cfg.engine.cpu_threads,
         "beam_size": cfg.engine.beam_size,
+        "hotwords": job_hotwords,
+        # cf. WhisperEngine.transcribe : désactivé dès qu'un hotwords est fourni,
+        # pour laisser la place au vocabulaire plutôt qu'au texte précédent.
+        "condition_on_previous_text": not bool(job_hotwords),
     }
     payload["finalized_at"] = time.time()
     (target / "meta.json").write_text(
