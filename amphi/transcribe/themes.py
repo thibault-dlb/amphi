@@ -34,7 +34,7 @@ from ..library import scan
 from ..logging_setup import setup
 from ..models import RecordingMeta
 from ..paths import INDEX_LOCK
-from .summarize import SummaryError, SummarySkipped, generate, strip_front_matter
+from .summarize import StatusFn, SummaryError, SummarySkipped, generate, strip_front_matter
 
 log = logging.getLogger(__name__)
 
@@ -561,7 +561,9 @@ def is_indexed(transcript: Path) -> bool:
         return False
 
 
-def index_course(transcript: Path, meta: RecordingMeta, gcfg: GeminiConfig) -> int:
+def index_course(
+    transcript: Path, meta: RecordingMeta, gcfg: GeminiConfig, status: StatusFn | None = None
+) -> int:
     """Ajoute ce cours à l'index des thèmes de sa matière (INDEX.md réécrit).
 
     Renvoie le nombre de thèmes concernés. Lève SummarySkipped (rien à indexer, pas de clé)
@@ -578,7 +580,9 @@ def index_course(transcript: Path, meta: RecordingMeta, gcfg: GeminiConfig) -> i
     key = course_key(transcript)
     user = build_prompt(load_index(json_path, meta.matiere, meta.niveau), meta, numbered)
     log.info("Index des thèmes (%s) : %s — ~%d caractères en entrée", gcfg.model, key, len(user))
-    reply, model = generate(gcfg, SYSTEM_PROMPT, user, json_schema=SCHEMA)
+    reply, model = generate(gcfg, SYSTEM_PROMPT, user, json_schema=SCHEMA, status=status)
+    if status:
+        status(f"réponse de {model} reçue · fusion dans l'index…")
     items = parse_reply(reply, model)
 
     course = {

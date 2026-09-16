@@ -281,6 +281,19 @@ def _finalize(job: Recording, cfg: Config, store: Store, work: Path, target: Pat
     log.info("Livré : %s", target)
 
 
+def _stage_fn(store: Store, job_id: int):
+    """Détail d'une requête Gemini (modèle, essai, attente) → champ `stage` affiché dans la file."""
+    last = ""
+
+    def _set(text: str) -> None:
+        nonlocal last
+        if text != last:  # même texte : on garde updated_at, base du temps écoulé affiché
+            last = text
+            store.update(job_id, stage=text)
+
+    return _set
+
+
 def _maybe_summarize(job: Recording, cfg: Config, store: Store, target: Path) -> None:
     resume_md = target / "resume.md"
     if resume_md.exists():  # déjà fait (reprise, relance de l'index) : on passe à l'index
@@ -303,9 +316,11 @@ def _maybe_summarize(job: Recording, cfg: Config, store: Store, target: Path) ->
         raise TranscriptionInterrupted  # on attend le secteur pour le résumé aussi
 
     store.set_status(job.id, Status.SUMMARIZING)
-    store.set_progress(job.id, progress=1.0, stage="résumé Gemini…")
+    store.set_progress(job.id, progress=1.0, stage="préparation de la requête…")
     try:
-        content = summ.summarize(transcript_text, job.meta(), cfg.gemini)
+        content = summ.summarize(
+            transcript_text, job.meta(), cfg.gemini, status=_stage_fn(store, job.id)
+        )
     except summ.SummarySkipped as exc:
         log.info("Résumé non disponible (%s) — transcript livré seul", exc)
         store.update(job.id, status=Status.DONE, stage="terminé (sans résumé)")
@@ -335,9 +350,9 @@ def _maybe_index(job: Recording, cfg: Config, store: Store, target: Path) -> Non
         raise TranscriptionInterrupted  # comme le résumé : on attend le secteur
 
     store.set_status(job.id, Status.INDEXING)
-    store.set_progress(job.id, progress=1.0, stage="index des thèmes…")
+    store.set_progress(job.id, progress=1.0, stage="lecture de l'index de la matière…")
     try:
-        count = themes.index_course(transcript, job.meta(), g)
+        count = themes.index_course(transcript, job.meta(), g, status=_stage_fn(store, job.id))
     except summ.SummarySkipped as exc:
         log.info("Index des thèmes non mis à jour (%s)", exc)
         store.update(job.id, status=Status.DONE, stage="terminé (sans index)")

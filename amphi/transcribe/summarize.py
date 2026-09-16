@@ -8,11 +8,16 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 
 from ..config import GeminiConfig
 from ..models import RecordingMeta
 
 log = logging.getLogger(__name__)
+
+# Rapporte l'étape en cours à l'UI (modèle, essai, attente…). Par convention, un texte
+# qui finit par « … » est une attente ouverte : la file d'attente y ajoute le temps écoulé.
+StatusFn = Callable[[str], None]
 
 DEFAULT_SYSTEM_PROMPT = """\
 Tu es un assistant qui produit la fiche de révision d'un cours d'ingénierie à partir de \
@@ -124,6 +129,10 @@ def _is_overloaded(exc: Exception) -> bool:
     return "503" in s or "UNAVAILABLE" in s or "overloaded" in s.lower() or "429" in s
 
 
+def _overload_code(exc: Exception) -> str:
+    return "429 quota" if "429" in str(exc) else "503"
+
+
 def _is_missing_model(exc: Exception) -> bool:
     s = str(exc)
     return "404" in s or "NOT_FOUND" in s or "not found" in s.lower()
@@ -158,8 +167,12 @@ def _is_bad_schema(exc: Exception) -> bool:
 
 def _one_call(
     client, types, model: str, system: str, user: str, thinking: int,
-    json_schema: dict | None = None,
+    json_schema: dict | None = None, status: StatusFn | None = None, retry_note: str = "",
 ) -> str:
+    def say(note: str) -> None:
+        if status:
+            status(" · ".join(p for p in (note, "en attente de la réponse…") if p))
+
     cfg_kwargs: dict = dict(
         system_instruction=system, temperature=0.3, max_output_tokens=32000
     )
@@ -172,6 +185,7 @@ def _one_call(
         except Exception:  # noqa: BLE001
             pass
     while True:
+        say(retry_note)
         try:
             resp = client.models.generate_content(
                 model=model, contents=user,
@@ -181,9 +195,12 @@ def _one_call(
         except Exception as exc:  # noqa: BLE001
             # option refusée par ce modèle : on la retire et on retente (une de moins par tour)
             if "thinking_config" in cfg_kwargs and _is_bad_kwarg(exc):
+                log.info("%s refuse l'option de raisonnement — nouvel essai sans", model)
+                retry_note = "raisonnement refusé par le modèle, relancé sans"
                 cfg_kwargs.pop("thinking_config")
             elif "response_schema" in cfg_kwargs and _is_bad_schema(exc):
                 log.info("%s refuse le schéma JSON — nouvel essai sans schéma", model)
+                retry_note = "schéma JSON refusé par le modèle, relancé en JSON libre"
                 cfg_kwargs.pop("response_schema")  # JSON libre : le prompt décrit le format
             else:
                 raise
@@ -192,17 +209,28 @@ def _one_call(
         return text
     if reason == "MAX_TOKENS" and thinking != 0:
         # le raisonnement a mangé tout le budget : on réessaie sans raisonnement
-        return _one_call(client, types, model, system, user, 0, json_schema)
+        log.info("%s : budget épuisé par le raisonnement — nouvel essai sans", model)
+        return _one_call(
+            client, types, model, system, user, 0, json_schema, status,
+            "réponse vide (raisonnement trop long), relancé sans raisonnement",
+        )
     raise SummaryError(f"réponse vide de {model} (finish_reason={reason or 'inconnu'})")
 
 
+def _duration(seconds: float) -> str:
+    seconds = int(seconds)
+    return f"{seconds} s" if seconds < 60 else f"{seconds // 60} min {seconds % 60:02d} s"
+
+
 def generate(
-    gcfg: GeminiConfig, system: str, user: str, json_schema: dict | None = None
+    gcfg: GeminiConfig, system: str, user: str, json_schema: dict | None = None,
+    status: StatusFn | None = None,
 ) -> tuple[str, str]:
     """Appel Gemini avec relances sur saturation et modèles de repli.
 
     Renvoie (texte, modèle réellement utilisé). Avec `json_schema`, la réponse est du JSON
-    contraint par ce schéma (index des thèmes).
+    contraint par ce schéma (index des thèmes). `status` reçoit le détail de chaque étape
+    (modèle, essai, saturation, repli) pour l'affichage.
     """
     genai = _client(gcfg.api_key)
     from google.genai import types  # noqa: PLC0415
@@ -210,12 +238,22 @@ def generate(
     client = genai.Client(api_key=gcfg.api_key)
     models = [gcfg.model, *[m for m in gcfg.fallback_models if m != gcfg.model]]
 
+    size = f"{(len(system) + len(user) + 999) // 1000} k caractères"
     last_exc: Exception | None = None
+    note = ""  # pourquoi on est passé au modèle courant, affiché jusqu'à la réponse
     for mi, model in enumerate(models):
+        label = model if mi == 0 else f"{model} (repli {mi}/{len(models) - 1})"
         for attempt in range(4):
+            prefix = " · ".join(p for p in (note, label, f"essai {attempt + 1}/4", size) if p)
+
+            def say(text: str, prefix: str = prefix) -> None:
+                if status:
+                    status(f"{prefix} · {text}")
+
             try:
                 out = _one_call(
-                    client, types, model, system, user, gcfg.thinking_budget, json_schema
+                    client, types, model, system, user, gcfg.thinking_budget, json_schema,
+                    say,
                 )
                 if mi > 0:
                     log.info("Réponse via le modèle de repli %s", model)
@@ -224,14 +262,22 @@ def generate(
                 last_exc = exc
                 if _is_missing_model(exc):
                     log.info("%s indisponible pour cette clé — modèle suivant", model)
+                    note = f"{model} indisponible"
                     break
                 if _is_overloaded(exc) and attempt < 3:
                     wait = 5 * (2**attempt)
                     log.warning("%s saturé (tentative %d/4) — attente %ds", model, attempt + 1, wait)
-                    time.sleep(wait)
+                    for left in range(wait, 0, -1):
+                        if status:
+                            status(
+                                f"{label} saturé ({_overload_code(exc)}) · essai {attempt + 1}/4 "
+                                f"échoué · essai {attempt + 2}/4 dans {_duration(left)}"
+                            )
+                        time.sleep(1)
                     continue
                 if _is_overloaded(exc):
                     log.warning("%s toujours saturé — modèle suivant", model)
+                    note = f"{model} saturé après 4 essais"
                     break
                 raise SummaryError(f"{type(exc).__name__}: {exc}") from exc
     raise SummaryError(str(last_exc) if last_exc else "échec inconnu")
@@ -266,7 +312,9 @@ def _assemble(meta: RecordingMeta, body: str, model: str) -> str:
     return "\n".join(fm)
 
 
-def summarize(transcript_md: str, meta: RecordingMeta, gcfg: GeminiConfig) -> str:
+def summarize(
+    transcript_md: str, meta: RecordingMeta, gcfg: GeminiConfig, status: StatusFn | None = None
+) -> str:
     """Renvoie le contenu de resume.md. Lève SummaryError / SummarySkipped en cas d'échec."""
     if not gcfg.is_active():
         raise SummarySkipped("Gemini non configuré")
@@ -280,5 +328,5 @@ def summarize(transcript_md: str, meta: RecordingMeta, gcfg: GeminiConfig) -> st
         f"Transcription automatique à synthétiser :\n\n{body_in}"
     )
     log.info("Résumé Gemini (%s) : ~%d caractères en entrée", gcfg.model, len(user))
-    text, model_used = generate(gcfg, system, user)
+    text, model_used = generate(gcfg, system, user, status=status)
     return _assemble(meta, text, model_used)

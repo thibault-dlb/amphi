@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -24,6 +26,24 @@ from .theme import COLORS
 def _structural_sig(rows: list[Recording]) -> tuple:
     """Change quand la liste ou les statuts changent (pas à chaque % de progression)."""
     return tuple((r.id, r.status) for r in rows)
+
+
+def _elapsed(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    return f"{seconds} s" if seconds < 60 else f"{seconds // 60} min {seconds % 60:02d} s"
+
+
+def _gemini_label(what: str, r: Recording) -> str:
+    """« Résumé Gemini — gemini-flash-latest · essai 1/4 · … · en attente de la réponse… · 42 s ».
+
+    Un détail qui finit par « … » est une attente ouverte depuis la dernière écriture
+    du worker (updated_at) : on y ajoute le temps écoulé."""
+    if not r.stage:
+        return f"{what} en cours…"
+    text = f"{what} — {r.stage}"
+    if r.stage.endswith("…") and r.updated_at:
+        text += f" · {_elapsed(time.time() - r.updated_at)}"
+    return text
 
 
 class QueueItem(QFrame):
@@ -53,6 +73,7 @@ class QueueItem(QFrame):
 
         self._status = QLabel()
         self._status.setStyleSheet("font-size:12px;")
+        self._status.setWordWrap(True)  # détail Gemini : modèle, essai, attente
         lay.addWidget(self._status)
 
         self._bar = QProgressBar()
@@ -97,8 +118,8 @@ class QueueItem(QFrame):
                 f"En pause — {r.stage}" if r.stage else "En pause"
             ),
             Status.TRANSCRIBED: "Transcript prêt — résumé à suivre",
-            Status.SUMMARIZING: "Résumé Gemini en cours…",
-            Status.INDEXING: "Index des thèmes en cours…",
+            Status.SUMMARIZING: _gemini_label("Résumé Gemini", r),
+            Status.INDEXING: _gemini_label("Index des thèmes", r),
             Status.DONE: "✓ Terminé",
             Status.TRANSCRIBE_FAILED: "✗ Échec de la transcription",
             Status.SUMMARY_FAILED: "✓ Transcript OK · résumé en échec",
