@@ -80,8 +80,6 @@ class Config:
     window_state_b64: str = ""                   # QMainWindow.saveState (splitter, etc.)
     splitter_state_b64: str = ""
     always_on_top: bool = False                  # fenêtre Windows classique par défaut
-    snap_screenpad_on_launch: bool = True        # ancrer sur le ScreenPad à chaque lancement
-    screenpad_side: str = "right"                # "right" | "left"
 
     # --- onboarding ------------------------------------------------------
     onboarding_done: bool = False                # masque les bandeaux de première config

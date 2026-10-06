@@ -1,9 +1,35 @@
 # Amphi
 
 Enregistreur de cours + transcription locale (Faster-Whisper) + résumé automatique
-(Gemini). Conçu pour un **ASUS ZenBook Duo 14 (UX482EA)** : fenêtre sur la moitié
-gauche du ScreenPad Plus, transcription sur CPU (pas de GPU/NPU exploitable sur ce
-laptop), rangement dans `OneDrive\Cours\<Niveau>\<Matière>\`.
+(Gemini). Transcription sur CPU, rangement dans `<racine>\<Niveau>\<Matière>\`.
+
+## Modifications de cette branche
+
+Adaptation à un laptop sans ScreenPad (Intel i5-1340P, 16 Go, sans GPU dédié) :
+
+- **Suppression de tout le support ScreenPad Plus** : module `amphi/ui/screens.py`
+  supprimé, plus d'ancrage automatique au lancement, plus d'entrée « Ancrer sur le
+  ScreenPad » (`Ctrl+Home`) dans le menu Affichage, plus d'options côté/ancrage dans
+  Réglages > Comportement, champs `snap_screenpad_on_launch` / `screenpad_side` retirés
+  de la config (ignorés s'ils subsistent dans un ancien `config.json`). Sans géométrie
+  sauvegardée, la fenêtre s'ouvre centrée sur l'écran principal.
+- **Correctif de dépendance** : `faster-whisper==1.2.1` plante avec PyAV 17+
+  (`open() got an unexpected keyword argument 'metadata_errors'`) à chaque
+  transcription. `requirements.txt` épingle désormais `av>=15,<17`.
+- **Réglage moteur pour CPU hybride** (dans `config.json`, local) : le benchmark
+  d'origine ne teste que 4 et 8 threads. Mesures sur i5-1340P (4P + 8E cœurs),
+  `large-v3-turbo` int8, beam 5, échantillon de 55 s :
+
+  | Threads | RTF |
+  |---|---|
+  | 4 | 0,63 |
+  | **6** | **0,60** |
+  | 8 | 0,67 |
+  | 12 | 0,91 |
+
+  → `cpu_threads = 6`, ~36 min de calcul pour 1 h de cours. Même nombre de mots
+  transcrits dans toutes les configurations.
+- Docstrings et README débarrassés des mentions ScreenPad / ZenBook.
 
 ## Installation
 
@@ -36,10 +62,6 @@ Le script crée `.venv`, installe les dépendances, télécharge le modèle
 Fenêtre Windows normale : redimensionnable, `Win`+flèches (snap), minimisation,
 menus **Fichier** / **Affichage**, icône dans la zone de notification.
 
-Au lancement, l'app **s'ancre sur la moitié droite du ScreenPad** (vrai snap Windows :
-si tu ancres une autre app à gauche, les deux se redimensionnent ensemble par la poignée
-centrale). Réglable dans Réglages > Comportement (côté, ou désactiver l'ancrage auto).
-
 | Action | Où |
 |---|---|
 | Démarrer / arrêter | gros bouton rouge |
@@ -49,7 +71,6 @@ centrale). Réglable dans Réglages > Comportement (côté, ou désactiver l'anc
 | Suivi transcription | panneau de droite |
 | Réglages | menu **Fichier** ou `Ctrl+,` |
 | Toujours au-dessus | menu **Affichage** |
-| Ré-ancrer sur le ScreenPad | menu **Affichage** ou `Ctrl+Home` |
 
 À l'arrêt, l'enregistrement part en file. La transcription (puis le résumé) se
 lance **quand le laptop est sur secteur** ; sur batterie elle se met en pause et
@@ -106,7 +127,7 @@ amphi/
   audio/       capture (pause/marqueurs/anti-crash), encodage FLAC
   transcribe/  moteur faster-whisper, worker autonome, rendu Markdown, résumé + index des thèmes (Gemini)
   library/     index SQLite, découverte des matières
-  ui/          fenêtre compacte ScreenPad, dialogues
+  ui/          fenêtre compacte, dialogues
 tools/
   benchmark.py mesure le débit réel et fixe compute_type / cpu_threads
   make_icon.py génère l'icône
