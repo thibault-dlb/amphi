@@ -342,24 +342,6 @@ class SettingsDialog(QDialog):
         self._on_top.setChecked(self.cfg.always_on_top)
         form.addRow(self._on_top)
 
-        self._snap_launch = QCheckBox("Ancrer sur le ScreenPad à chaque lancement (snap Windows)")
-        self._snap_launch.setChecked(self.cfg.snap_screenpad_on_launch)
-        form.addRow(self._snap_launch)
-
-        self._snap_side = QComboBox()
-        self._snap_side.addItem("Plein écran", "full")
-        self._snap_side.addItem("Moitié droite", "right")
-        self._snap_side.addItem("Moitié gauche", "left")
-        self._snap_side.setCurrentIndex(max(0, self._snap_side.findData(self.cfg.screenpad_side)))
-        form.addRow("Position sur le ScreenPad", self._snap_side)
-        snote = QLabel(
-            "Plein écran : fenêtre maximisée sur tout le ScreenPad. Moitiés : vrai snap "
-            "Windows, la poignée de partage est commune avec l'app ancrée sur l'autre "
-            "moitié (elles se redimensionnent ensemble)."
-        )
-        snote.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
-        snote.setWordWrap(True)
-        form.addRow("", snote)
 
         self._def_lang = QComboBox()
         self._def_lang.addItem("Français", "fr")
@@ -516,8 +498,6 @@ class SettingsDialog(QDialog):
         c.prevent_sleep = self._prevent_sleep.isChecked()
         c.transcribe_while_recording = self._twr.isChecked()
         c.always_on_top = self._on_top.isChecked()
-        c.snap_screenpad_on_launch = self._snap_launch.isChecked()
-        c.screenpad_side = self._snap_side.currentData()
         c.default_langue = self._def_lang.currentData()
 
         c.onboarding_done = True

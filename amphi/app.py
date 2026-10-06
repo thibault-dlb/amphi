@@ -73,11 +73,7 @@ def main() -> int:
     app.setStyleSheet(QSS)
 
     from . import __version__
-    from .ui.screens import describe
-
     log.info("Amphi %s — démarrage.", __version__)
-    for line in describe():
-        log.info("Écran : %s", line)
     cfg = Config.load()
     store = Store()
     window = MainWindow(cfg, store)

@@ -52,7 +52,6 @@ from .moodle_dialog import MoodleDialog
 from .moodle_pane import MoodlePane
 from .queue_pane import QueuePane
 from .recorder_pane import RecorderPane
-from .screens import snap_to_screenpad
 from .settings_dialog import SettingsDialog
 from .validate_dialog import ValidateDialog
 
@@ -118,10 +117,6 @@ class MainWindow(QMainWindow):
         self._act_ontop.setChecked(self.cfg.always_on_top)
         self._act_ontop.toggled.connect(self._set_pinned)
         m_view.addAction(self._act_ontop)
-        act_recenter = QAction("Ancrer sur le &ScreenPad", self)
-        act_recenter.setShortcut(QKeySequence("Ctrl+Home"))
-        act_recenter.triggered.connect(self._snap_screenpad)
-        m_view.addAction(act_recenter)
 
         m_moodle = self.menuBar().addMenu("&Moodle")
         act_sync = QAction("&Synchroniser les devoirs", self)
@@ -133,9 +128,6 @@ class MainWindow(QMainWindow):
         act_apple = QAction("Configurer l'agenda &Apple…", self)
         act_apple.triggered.connect(self._open_moodle_dialog)
         m_moodle.addAction(act_apple)
-
-    def _snap_screenpad(self) -> None:
-        snap_to_screenpad(self, self.cfg.screenpad_side)
 
     # ------------------------------------------------------------ devoirs Moodle
     def _open_moodle_dialog(self) -> None:
@@ -399,10 +391,6 @@ class MainWindow(QMainWindow):
             # (quand la taille du splitter est connue)
             self._repartir_tailles = True
 
-        if self.cfg.snap_screenpad_on_launch:
-            snap_to_screenpad(self, self.cfg.screenpad_side)
-            return
-
         restored = False
         if self.cfg.window_geometry_b64:
             try:
@@ -411,10 +399,13 @@ class MainWindow(QMainWindow):
                 )
             except Exception:  # noqa: BLE001
                 restored = False
-        if restored and self._on_a_screen():
-            self.show()
-        else:
-            snap_to_screenpad(self, self.cfg.screenpad_side)
+        if not (restored and self._on_a_screen()):
+            # pas de géométrie valide : centrer sur l'écran principal
+            avail = QGuiApplication.primaryScreen().availableGeometry()
+            frame = self.frameGeometry()
+            frame.moveCenter(avail.center())
+            self.move(frame.topLeft())
+        self.show()
 
     def _on_a_screen(self) -> bool:
         centre = self.frameGeometry().center()

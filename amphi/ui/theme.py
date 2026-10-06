@@ -1,4 +1,4 @@
-"""Thème sombre compact (fenêtre Windows classique, souvent sur le ScreenPad)."""
+"""Thème sombre compact (fenêtre Windows classique)."""
 
 from __future__ import annotations
 

@@ -1,9 +1,9 @@
 # Amphi
 
 Enregistreur de cours + transcription locale (Faster-Whisper) + résumé automatique
-(Gemini). Conçu pour un **ASUS ZenBook Duo 14 (UX482EA)** : fenêtre en plein écran
-sur le ScreenPad Plus, transcription sur CPU (pas de GPU/NPU exploitable sur ce
-laptop), rangement dans `OneDrive\Cours\<Niveau>\<Matière>\`.
+(Gemini). Adapté à un **Dell XPS 15 9510** (i7-11800H, 32 Go, **GPU NVIDIA RTX 3050 Ti
+Laptop 4 Go**) : transcription sur GPU (CUDA) avec repli automatique sur CPU, fenêtre
+Windows classique, rangement dans `OneDrive\Cours\<Niveau>\<Matière>\`.
 
 Documentation détaillée : [`docs/`](docs/README.md).
 
@@ -39,11 +39,8 @@ Le script crée `.venv`, installe les dépendances, télécharge le modèle
 Fenêtre Windows normale : redimensionnable, `Win`+flèches (snap), minimisation,
 menus **Fichier** / **Affichage**, icône dans la zone de notification.
 
-Au lancement, l'app **s'ouvre en plein écran sur le ScreenPad** (fenêtre maximisée : les
-trois tuiles Moodle / Enregistrement / File d'attente côte à côte). Réglable dans Réglages >
-Comportement : plein écran, moitié droite ou moitié gauche (vrai snap Windows : avec une
-autre app ancrée sur l'autre moitié, les deux se redimensionnent ensemble), ou désactiver
-l'ancrage auto.
+Au lancement, l'app s'ouvre centrée sur l'écran principal (trois tuiles Moodle /
+Enregistrement / File d'attente côte à côte), ou à la dernière position enregistrée.
 
 | Action | Où |
 |---|---|
@@ -54,7 +51,6 @@ l'ancrage auto.
 | Suivi transcription | panneau de droite |
 | Réglages | menu **Fichier** ou `Ctrl+,` |
 | Toujours au-dessus | menu **Affichage** |
-| Ré-ancrer sur le ScreenPad | menu **Affichage** ou `Ctrl+Home` |
 | Synchroniser les devoirs Moodle → agenda Apple | bouton **⟳ Synchroniser Moodle** (tuile « MOODLE », à gauche) ou `Ctrl+D` |
 
 À l'arrêt, l'enregistrement part en file. La transcription (puis le résumé) se
@@ -230,7 +226,7 @@ amphi/
   transcribe/  moteur faster-whisper, worker autonome, rendu Markdown, résumé + index des thèmes (Gemini)
   library/     index SQLite, découverte des matières
   moodle/      devoirs Moodle (lecture seule, campus Paris) → calendrier iCloud (CalDAV)
-  ui/          fenêtre compacte ScreenPad, dialogues
+  ui/          fenêtre compacte, dialogues
 tools/
   benchmark.py mesure le débit réel et fixe compute_type / cpu_threads
   make_icon.py génère l'icône
