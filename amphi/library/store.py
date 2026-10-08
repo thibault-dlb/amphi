@@ -173,6 +173,15 @@ class Store:
     def set_status(self, rec_id: int, status: str, *, error: str = "") -> None:
         self.update(rec_id, status=status, error=error)
 
+    def restore_transcribing(self, rec_id: int) -> None:
+        """Remet TRANSCRIBING si le statut a été repassé à « en attente » pendant que le
+        worker transcrit (ex. clic sur Reprendre/Réessayer) ; ne touche pas à une pause."""
+        self._con.execute(
+            "UPDATE recordings SET status=?, updated_at=? WHERE id=? AND status=?",
+            (Status.TRANSCRIBING, time.time(), rec_id, Status.QUEUED),
+        )
+        self._con.commit()
+
     def set_progress(
         self, rec_id: int, *, progress: float, stage: str, checkpoint_s: float | None = None
     ) -> None:

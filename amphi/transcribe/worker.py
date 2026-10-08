@@ -15,6 +15,7 @@ import shutil
 import sys
 import time
 import logging
+from collections.abc import Callable
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
@@ -165,7 +166,10 @@ def _cancel_fn(cfg: Config, store: Store, job_id: int):
     return lambda: _should_stand_down(cfg) or _user_paused(store, job_id)
 
 
-def _transcribe(job: Recording, cfg: Config, store: Store, engine: WhisperEngine, work: Path) -> None:
+def _transcribe(
+    job: Recording, cfg: Config, store: Store, engine: WhisperEngine, work: Path,
+    tick: Callable[[], None] | None = None,
+) -> None:
     store.set_status(job.id, Status.TRANSCRIBING)
     capture = work / "capture.wav"
     if not capture.exists():
@@ -206,9 +210,10 @@ def _transcribe(job: Recording, cfg: Config, store: Store, engine: WhisperEngine
             log.info("Parole normalisée pour la transcription (job %d)", job.id)
 
     seen_end = resume_from
+    last_tick = time.monotonic()
 
     def _on_seg(seg: Segment) -> None:
-        nonlocal seen_end
+        nonlocal seen_end, last_tick
         record = {
             "start": round(seg.start + resume_from, 3),
             "end": round(seg.end + resume_from, 3),
@@ -216,6 +221,15 @@ def _transcribe(job: Recording, cfg: Config, store: Store, engine: WhisperEngine
         }
         _append_jsonl(jsonl, record)
         seen_end = record["end"]
+        store.restore_transcribing(job.id)
+        # la boucle principale est bloquée ici pendant des heures : on y relance
+        # les résumés devenus prêts entre-temps (ex. clic sur « Relancer le résumé »)
+        if tick is not None and time.monotonic() - last_tick > 10.0:
+            last_tick = time.monotonic()
+            try:
+                tick()
+            except Exception:  # noqa: BLE001
+                log.exception("Relance des résumés pendant la transcription")
         if duration > 0:
             store.set_progress(
                 job.id,
@@ -410,7 +424,10 @@ _TRANSCRIPTION_WORK = {Status.TRANSCRIBING, Status.PAUSED_NO_AC, Status.QUEUED}
 _SUMMARY_WORK = {Status.TRANSCRIBED, Status.SUMMARIZING, Status.INDEXING}
 
 
-def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -> None:
+def _process(
+    job: Recording, cfg: Config, store: Store, engine: WhisperEngine,
+    tick: Callable[[], None] | None = None,
+) -> None:
     """Transcrit puis livre le transcript (statut → TRANSCRIBED). Le résumé Gemini
     est traité à part, en parallèle (cf. _run_summary)."""
     work = Path(job.staging_dir) if job.staging_dir else None
@@ -421,7 +438,7 @@ def _process(job: Recording, cfg: Config, store: Store, engine: WhisperEngine) -
     if work and not (work / "transcript.md").exists():
         if _user_paused(store, job.id):
             raise TranscriptionInterrupted  # pause demandée pile avant le démarrage
-        _transcribe(job, cfg, store, engine, work)
+        _transcribe(job, cfg, store, engine, work, tick)
 
     if not (target / "transcript.md").exists():
         if not work:
@@ -566,7 +583,13 @@ def run(idle_exit: float = IDLE_EXIT_S, once: bool = False) -> int:
             try:
                 if engine is None:
                     engine = _make_engine(cfg)
-                _process(job, cfg, store, engine)
+                _process(
+                    job, cfg, store, engine,
+                    tick=lambda: (
+                        _reap(in_flight),
+                        _submit_summaries(store, Config.load(), summary_pool, in_flight),
+                    ),
+                )
             except TranscriptionInterrupted:
                 if WORKER_STOP_FLAG.exists():
                     log.info("Interrompu par l'arrêt — checkpoint conservé.")

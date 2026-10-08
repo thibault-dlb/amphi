@@ -40,7 +40,7 @@ class GeminiConfig:
     # (gemini-3.8-flash est régulièrement saturé -> 503). Modifiable dans les Réglages.
     model: str = "gemini-flash-latest"
     fallback_models: list = field(
-        default_factory=lambda: ["gemini-3.5-flash", "gemini-2.0-flash"]
+        default_factory=lambda: ["gemini-3.5-flash", "gemini-3.6-flash"]
     )
     enabled: bool = True                # sans clé, reste inactif de toute façon
     auto_after_transcription: bool = True
