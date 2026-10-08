@@ -2,6 +2,7 @@
 # Installé dans C:\Users\thibd\Amphi\.venv par install.ps1
 
 faster-whisper==1.2.1     # transcription (CTranslate2, int8 AVX-512 VNNI)
+av>=15,<17               # PyAV : faster-whisper 1.2.1 casse avec av 17+ (metadata_errors)
 PySide6==6.11.2           # interface Qt
 sounddevice==0.5.6        # capture micro (PortAudio / WASAPI)
 soundfile>=0.12.1         # écriture WAV/FLAC en flux

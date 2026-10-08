@@ -42,6 +42,9 @@ Consignes :
 """
 
 
+REQUEST_TIMEOUT_S = 180
+
+
 class SummaryError(RuntimeError):
     pass
 
@@ -124,12 +127,23 @@ def _is_bad_kwarg(exc: Exception) -> bool:
     return "unexpected keyword" in s or "got an unexpected" in s or "thinking" in s
 
 
+def _is_timeout(exc: Exception) -> bool:
+    """Requête sans réponse (délai dépassé) ou connexion coupée par le serveur."""
+    name = type(exc).__name__
+    return "Timeout" in name or name in ("RemoteProtocolError", "ReadError", "ConnectError")
+
+
 def _is_overloaded(exc: Exception) -> bool:
     s = str(exc)
-    return "503" in s or "UNAVAILABLE" in s or "overloaded" in s.lower() or "429" in s
+    return (
+        "503" in s or "UNAVAILABLE" in s or "overloaded" in s.lower() or "429" in s
+        or _is_timeout(exc)
+    )
 
 
 def _overload_code(exc: Exception) -> str:
+    if _is_timeout(exc):
+        return "sans réponse"
     return "429 quota" if "429" in str(exc) else "503"
 
 
@@ -235,7 +249,12 @@ def generate(
     genai = _client(gcfg.api_key)
     from google.genai import types  # noqa: PLC0415
 
-    client = genai.Client(api_key=gcfg.api_key)
+    # Sans délai, une requête « avalée » par un Gemini saturé reste pendante 15-30 min avant
+    # de finir en 503 ; on coupe au bout de REQUEST_TIMEOUT_S et on relance / passe au repli.
+    client = genai.Client(
+        api_key=gcfg.api_key,
+        http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_S * 1000),
+    )
     models = [gcfg.model, *[m for m in gcfg.fallback_models if m != gcfg.model]]
 
     size = f"{(len(system) + len(user) + 999) // 1000} k caractères"
