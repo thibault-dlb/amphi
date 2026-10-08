@@ -390,6 +390,30 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError, psutil.Error):
             return False
 
+    def _stop_worker(self, grace_s: float = 8.0) -> None:
+        """Fermer Amphi arrête aussi le worker : arrêt propre (drapeau, checkpoint conservé),
+        puis kill si un résumé Gemini ou un segment tarde. Tout est repris au prochain lancement."""
+        try:
+            pid = int(WORKER_LOCK.read_text().strip())
+            proc = psutil.Process(pid)
+            if "python" not in proc.name().lower():
+                return
+        except (OSError, ValueError, psutil.Error):
+            return
+        try:
+            WORKER_STOP_FLAG.touch()
+            try:
+                proc.wait(timeout=grace_s)
+            except psutil.TimeoutExpired:
+                log.warning("Worker %d toujours actif après %.0f s — arrêt forcé.", pid, grace_s)
+                for child in proc.children(recursive=True):
+                    child.kill()
+                proc.kill()
+                proc.wait(timeout=5)
+                WORKER_LOCK.unlink(missing_ok=True)
+        except (OSError, psutil.Error):
+            log.exception("Arrêt du worker à la fermeture")
+
     def ensure_worker(self) -> None:
         if not self.store.pending_exists():
             return
@@ -633,13 +657,7 @@ class MainWindow(QMainWindow):
         self._quitting = True
         self._update_sleep_lock(False)
         self._save_window()
-        if self.store.pending_exists() and self.is_worker_running():
-            self._tray.showMessage(
-                "Amphi",
-                "Les transcriptions continuent en arrière-plan.",
-                QSystemTrayIcon.MessageIcon.Information,
-                4000,
-            )
+        self._stop_worker()
         self._tray.hide()
         event.accept()
         QApplication.quit()

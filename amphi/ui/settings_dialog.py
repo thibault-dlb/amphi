@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QProcess, Qt, Signal
+from PySide6.QtCore import QProcess, QProcessEnvironment, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -241,8 +241,8 @@ class SettingsDialog(QDialog):
         self._g_model = QComboBox()
         self._g_model.setEditable(True)
         self._g_model.addItems(
-            ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.5-flash",
-             "gemini-2.0-flash", self.cfg.gemini.model]
+            ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash",
+             "gemini-3.6-flash", self.cfg.gemini.model]
         )
         self._g_model.setCurrentText(self.cfg.gemini.model)
         refresh = QPushButton("Rafraîchir")
@@ -280,7 +280,7 @@ class SettingsDialog(QDialog):
 
         mnote = QLabel(
             "gemini-flash-latest suit le Flash stable du moment. Si un modèle est saturé "
-            "(erreur 503), l'app bascule seule sur gemini-3.5-flash puis gemini-2.0-flash."
+            "(erreur 503), l'app bascule seule sur gemini-3.5-flash puis gemini-3.6-flash."
         )
         mnote.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
         mnote.setWordWrap(True)
@@ -544,6 +544,11 @@ class _ProcessDialog(QDialog):
         self._proc = QProcess(self)
         self._proc.setWorkingDirectory(str(APP_DIR))  # `python -m amphi…` doit trouver le paquet
         self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # stdout redirigé = cp1252 sous Windows : forcer UTF-8 (flèches, accents) côté enfant
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONIOENCODING", "utf-8")
+        env.insert("PYTHONUTF8", "1")
+        self._proc.setProcessEnvironment(env)
         self._proc.readyReadStandardOutput.connect(self._read)
         self._proc.finished.connect(self._finished)
         self._proc.start(argv[0], argv[1:])
