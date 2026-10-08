@@ -354,6 +354,17 @@ class MainWindow(QMainWindow):
     def _on_recording_finished(self, result: RecordingResult) -> None:
         dlg = ValidateDialog(self.cfg, result, self)
         code = dlg.exec()
+        if code == ValidateDialog.RESUME:
+            if self.recorder_pane.is_recording():
+                QMessageBox.information(
+                    self, "Reprendre", "Termine d'abord l'enregistrement en cours."
+                )
+                self._on_recording_finished(result)  # rouvre le classement
+            elif self.recorder_pane.resume_recording(result.staging_dir):
+                self.recorder_pane.recorder.resume()  # repart tout de suite (pas en pause)
+            else:
+                self._on_recording_finished(result)
+            return
         if code == ValidateDialog.DELETE:
             shutil.rmtree(result.staging_dir, ignore_errors=True)
             return

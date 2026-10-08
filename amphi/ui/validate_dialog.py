@@ -32,6 +32,7 @@ class ValidateDialog(QDialog):
     """Accept -> .result_meta est renseigné. 'Plus tard' -> laisse en staging."""
 
     DELETE = 2  # code de retour custom
+    RESUME = 3  # rouvrir l'enregistrement pour le poursuivre
 
     def __init__(self, cfg: Config, rec: RecordingResult, parent=None) -> None:
         super().__init__(parent)
@@ -115,6 +116,9 @@ class ValidateDialog(QDialog):
         buttons = QDialogButtonBox()
         self._ok = buttons.addButton("Classer et transcrire", QDialogButtonBox.ButtonRole.AcceptRole)
         self._ok.setObjectName("Primary")
+        self._resume = QPushButton("↩  Reprendre l'enregistrement")
+        self._resume.setToolTip("Annule l'arrêt : la capture continue dans le même fichier.")
+        buttons.addButton(self._resume, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.addButton("Plus tard", QDialogButtonBox.ButtonRole.RejectRole)
         self._del = QPushButton("Supprimer")
         self._del.setStyleSheet(f"color:{COLORS['rec']};")
@@ -124,6 +128,7 @@ class ValidateDialog(QDialog):
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         self._del.clicked.connect(lambda: self.done(self.DELETE))
+        self._resume.clicked.connect(lambda: self.done(self.RESUME))
 
         self._niveau.currentTextChanged.connect(self._update_preview)
         self._niveau.currentTextChanged.connect(self._on_niveau_changed)
