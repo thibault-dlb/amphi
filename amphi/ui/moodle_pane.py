@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from .moodle_table import MoodleTable
 from .theme import COLORS
@@ -30,9 +30,8 @@ class MoodlePane(QFrame):
         self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn.setToolTip("Devoirs → agenda Apple et nouveaux documents Moodle (Ctrl+D)")
         self._btn.clicked.connect(lambda *_: self.sync_requested.emit())
-        root.addWidget(self._btn)
 
-        self._fetch = QPushButton("📥  Récupérer les documents (Claude)")
+        self._fetch = QPushButton("📥  Récupérer")
         self._fetch.setCursor(Qt.CursorShape.PointingHandCursor)
         self._fetch.setToolTip(
             "Ouvre une console avec Claude Code qui lance /maj-moodle : télécharge et range "
@@ -42,7 +41,11 @@ class MoodlePane(QFrame):
         self._fetch.setEnabled(False)
         self._docs = 0
         self._fetch_running = False
-        root.addWidget(self._fetch)
+        boutons = QHBoxLayout()      # synchro et récupération côte à côte, à parts égales
+        boutons.setSpacing(8)
+        boutons.addWidget(self._btn, 1)
+        boutons.addWidget(self._fetch, 1)
+        root.addLayout(boutons)
 
         self._status = QLabel()
         self._status.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
@@ -54,7 +57,7 @@ class MoodlePane(QFrame):
 
     def set_busy(self, busy: bool, text: str = "") -> None:
         self._btn.setEnabled(not busy)
-        self._btn.setText("⟳  Synchro en cours…" if busy else "⟳  Synchroniser Moodle")
+        self._btn.setText("⟳  Synchro…" if busy else "⟳  Synchroniser Moodle")
         if text:
             self.set_status(text)
 
@@ -73,10 +76,14 @@ class MoodlePane(QFrame):
 
     def _refresh_fetch(self) -> None:
         if self._fetch_running:
-            self._fetch.setText("📥  Claude en cours…")
+            self._fetch.setText("📥  Claude…")
             self._fetch.setToolTip("Ferme la console Claude : Amphi resynchronise et met le tableau à jour.")
             self._fetch.setEnabled(False)
         else:
             n = f" ({self._docs})" if self._docs else ""
-            self._fetch.setText(f"📥  Récupérer les documents{n} (Claude)")
+            self._fetch.setText(f"📥  Récupérer{n}")
+            self._fetch.setToolTip(
+                "Ouvre une console avec Claude Code qui lance /maj-moodle : télécharge et range "
+                "les documents non synchronisés. Amphi resynchronise quand la console est fermée."
+            )
             self._fetch.setEnabled(self._docs > 0)
