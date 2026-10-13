@@ -54,6 +54,18 @@ class GeminiConfig:
 
 
 @dataclass
+class MoodleConfig:
+    """Copie des devoirs Moodle (campus Paris) vers l'agenda iCloud « Moodle IPSA ».
+    Les identifiants Apple ne sont PAS ici : ils sont dans le trousseau système."""
+
+    enabled: bool = False               # True une fois iCloud configuré
+    base_url: str = "https://moodle.ipsa.fr"
+    calendar_name: str = "Moodle IPSA"  # calendrier iCloud cible (créé s'il n'existe pas)
+    sync_on_startup: bool = True        # synchronisation silencieuse au lancement d'Amphi
+    last_sync: str = ""                 # horodatage ISO de la dernière synchro réussie
+
+
+@dataclass
 class Config:
     # --- rangement -------------------------------------------------------------
     courses_root: str = ""
@@ -87,6 +99,7 @@ class Config:
     # --- sous-sections ---------------------------------------------------
     engine: EngineConfig = field(default_factory=EngineConfig)
     gemini: GeminiConfig = field(default_factory=GeminiConfig)
+    moodle: MoodleConfig = field(default_factory=MoodleConfig)
 
     # ------------------------------------------------------------------------
     def courses_root_path(self) -> Path:
@@ -163,7 +176,7 @@ class Config:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             raw = {}
-        nested = {"engine": EngineConfig, "gemini": GeminiConfig}
+        nested = {"engine": EngineConfig, "gemini": GeminiConfig, "moodle": MoodleConfig}
         for key, sub_type in nested.items():
             if isinstance(raw.get(key), dict):
                 raw[key] = _filtered(sub_type, raw[key])

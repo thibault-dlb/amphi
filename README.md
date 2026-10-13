@@ -71,6 +71,7 @@ menus **Fichier** / **Affichage**, icône dans la zone de notification.
 | Suivi transcription | panneau de droite |
 | Réglages | menu **Fichier** ou `Ctrl+,` |
 | Toujours au-dessus | menu **Affichage** |
+| Synchroniser les devoirs Moodle → agenda Apple | menu **Moodle** ou `Ctrl+D` |
 
 À l'arrêt, l'enregistrement part en file. La transcription (puis le résumé) se
 lance **quand le laptop est sur secteur** ; sur batterie elle se met en pause et
@@ -120,6 +121,100 @@ transcrits… », ou
 .\.venv\Scripts\python -m amphi.transcribe.themes --all   # --matiere NOM · --force · --dry-run
 ```
 
+## Devoirs Moodle → agenda Apple
+
+Amphi copie les devoirs Moodle (IPSA, **campus Paris uniquement**) dans un calendrier iCloud
+« Moodle IPSA », visible sur l'iPhone, avec 3 rappels (J-3, J-1, 3 h avant). Un devoir rendu
+reste dans l'agenda, marqué ✅, sans rappel. Deux connexions à faire une seule fois : Moodle,
+puis Apple.
+
+### Étape A — Connexion à Moodle (token)
+
+Le token se récupère par le navigateur, car la connexion IPSA passe par le compte Microsoft
+(Office 365). Les étapes valent pour Opera, Chrome ou Edge.
+
+1. Ouvrir le navigateur et se connecter normalement sur **https://moodle.ipsa.fr** (bouton
+   Office 365, compte Microsoft IPSA). Attendre d'être sur le tableau de bord.
+2. Dans un **nouvel onglet** du même navigateur, ouvrir cette adresse (une seule ligne) :
+
+   ```
+   https://moodle.ipsa.fr/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=12345&urlscheme=moodlemobile&confirmed=1
+   ```
+
+   Une page Moodle « Votre enregistrement a été confirmé » s'affiche, avec un bouton pour
+   lancer l'application. **Ne pas cliquer dessus.**
+3. Sur cette page, faire **Ctrl+U** : le code source s'ouvre dans un nouvel onglet.
+4. Faire **Ctrl+F** et chercher `token=`. On tombe sur `moodlemobile://token=…`.
+5. Sélectionner à la souris le texte de `moodlemobile://token=` jusqu'au guillemet `"` qui suit
+   (déborder un peu n'est pas grave), puis **Ctrl+C**. Ne rien copier d'autre ensuite.
+6. Ouvrir **PowerShell** (touche Windows, taper `powershell`, Entrée), coller ce bloc puis
+   Entrée. Il décode le presse-papiers et enregistre le token **sans l'afficher** :
+
+   ```powershell
+   $raw = (Get-Clipboard) -join ''
+   $b64 = ($raw -replace '^.*token=', '') -replace '["''<>\s].*$', ''
+   $parts = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) -split ':::'
+   $parts[1] | Set-Content -NoNewline "$env:USERPROFILE\Amphi\.moodle_token"
+   "Token enregistré ($($parts[1].Length) caractères)"
+   ```
+
+   Résultat attendu : **« Token enregistré (32 caractères) »**. Si « 0 caractères » : la copie
+   de l'étape 5 n'a pas été prise, la refaire.
+7. Vérifier (lecture seule, rien n'est écrit dans iCloud) :
+
+   ```powershell
+   cd $env:USERPROFILE\Amphi
+   .\.venv\Scripts\python -m amphi.moodle sync --no-icloud
+   ```
+
+   La liste des devoirs Paris de l'année doit s'afficher.
+
+Le token est stocké dans `.moodle_token` (ignoré par git). Il donne accès au compte Moodle :
+ne jamais le partager. S'il expire, Amphi affiche « token Moodle expiré » : refaire les
+étapes 1 à 6. Pour le révoquer : Moodle → Préférences → Clés de sécurité.
+
+### Étape B — Connexion à Apple (iCloud)
+
+Amphi écrit dans iCloud par CalDAV avec un **mot de passe d'application** Apple (le mot de
+passe habituel du compte ne fonctionne pas).
+
+1. Sur le PC, ouvrir **https://account.apple.com** et se connecter avec l'identifiant Apple
+   (valider le code reçu sur l'iPhone).
+2. Aller dans **Connexion et sécurité** → **Mots de passe pour app**.
+3. Cliquer sur **+** / « Générer un mot de passe », le nommer **Amphi**.
+4. Apple affiche un code `xxxx-xxxx-xxxx-xxxx` : le **copier tout de suite** (il n'est
+   montré qu'une fois).
+5. Dans Amphi : menu **Moodle → Configurer l'agenda Apple…**
+6. Renseigner :
+   - **Identifiant Apple** : l'adresse mail du compte Apple ;
+   - **Mot de passe d'app** : le code de l'étape 4 ;
+   - laisser cochée **Synchroniser au démarrage d'Amphi**.
+7. Cliquer **Tester** → « ✓ Connexion iCloud OK — calendrier « Moodle IPSA » prêt ». Le
+   calendrier est créé dans iCloud s'il n'existait pas.
+8. Cliquer **Enregistrer**. Le mot de passe va dans le Gestionnaire d'identifiants Windows
+   (jamais dans `config.json`).
+9. Lancer une première synchro : **Ctrl+D** ou menu **Moodle → Synchroniser les devoirs**.
+   La barre d'état en bas de la fenêtre affiche l'étape en cours (« Moodle : état des dépôts
+   (3/9)… », « Apple : connexion à iCloud… »…), puis un résumé s'ouvre.
+10. Sur l'iPhone : app Calendrier → **Calendriers** (en bas) → vérifier que **Moodle IPSA**
+    est coché.
+
+### Ensuite
+
+- À chaque lancement, Amphi synchronise en arrière-plan (5 s après l'ouverture) ; une fenêtre
+  n'apparaît que s'il y a du nouveau ou une erreur. **Ctrl+D** force une synchro.
+- Moodle fait foi : un événement modifié ou supprimé à la main dans l'agenda est rétabli ; une
+  échéance décalée par le prof est déplacée ; un devoir retiré de Moodle est supprimé.
+- Ne sont **pas** mis dans l'agenda : les devoirs sans date limite et ceux déjà en retard
+  (ils sont listés dans le résumé). Seules les sections « CAMPUS PARIS » / « … - PARIS » des
+  cours de l'année sont lues ; les autres campus sont ignorés.
+- Dépannage :
+  - « Identifiants iCloud refusés » → refaire un mot de passe d'app (étape B) ;
+  - « token Moodle expiré » → refaire l'étape A ;
+  - menu Moodle absent → Amphi n'a pas été relancé (Quitter depuis l'icône de la barre des
+    tâches, puis rouvrir) ;
+  - simulation sans rien écrire : `.\.venv\Scripts\python -m amphi.moodle sync --dry-run`.
+
 ## Architecture
 
 ```
@@ -127,6 +222,7 @@ amphi/
   audio/       capture (pause/marqueurs/anti-crash), encodage FLAC
   transcribe/  moteur faster-whisper, worker autonome, rendu Markdown, résumé + index des thèmes (Gemini)
   library/     index SQLite, découverte des matières
+  moodle/      devoirs Moodle (lecture seule, campus Paris) → calendrier iCloud (CalDAV)
   ui/          fenêtre compacte, dialogues
 tools/
   benchmark.py mesure le débit réel et fixe compute_type / cpu_threads

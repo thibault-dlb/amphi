@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QObject, QThread, Signal
+
+
+class ProgressRelay(QObject):
+    """Relaie vers le thread UI des messages d'étape émis depuis un thread de travail."""
+
+    message = Signal(str)
 
 
 class CallableTask(QThread):

@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import psutil
@@ -45,6 +46,8 @@ from ..paths import (
     WORKER_LOCK,
     WORKER_STOP_FLAG,
 )
+from .async_task import ProgressRelay, run_async
+from .moodle_dialog import MoodleDialog
 from .queue_pane import QueuePane
 from .recorder_pane import RecorderPane
 from .settings_dialog import SettingsDialog
@@ -65,6 +68,7 @@ class MainWindow(QMainWindow):
         self._last_spawn = 0.0
         self._sleep_held = False
         self._glitch_seen = False
+        self._sync_task = None
 
         self.setWindowTitle("Amphi")
         self.setMinimumSize(440, 400)
@@ -89,6 +93,8 @@ class MainWindow(QMainWindow):
         self._housekeeping.start()
         if self.store.pending_exists():
             self.ensure_worker()
+        if self.cfg.moodle.enabled and self.cfg.moodle.sync_on_startup:
+            QTimer.singleShot(5000, lambda: self._sync_devoirs(manual=False))
 
     # ------------------------------------------------------------------ UI
     def _build_menus(self) -> None:
@@ -108,6 +114,74 @@ class MainWindow(QMainWindow):
         self._act_ontop.setChecked(self.cfg.always_on_top)
         self._act_ontop.toggled.connect(self._set_pinned)
         m_view.addAction(self._act_ontop)
+
+        m_moodle = self.menuBar().addMenu("&Moodle")
+        act_sync = QAction("&Synchroniser les devoirs", self)
+        self._act_sync = act_sync
+        act_sync.setShortcut(QKeySequence("Ctrl+D"))     # Ctrl+M = marqueur (recorder_pane)
+        act_sync.triggered.connect(lambda *_: self._sync_devoirs(manual=True))
+        m_moodle.addAction(act_sync)
+        m_moodle.addSeparator()
+        act_apple = QAction("Configurer l'agenda &Apple…", self)
+        act_apple.triggered.connect(self._open_moodle_dialog)
+        m_moodle.addAction(act_apple)
+
+    # ------------------------------------------------------------ devoirs Moodle
+    def _open_moodle_dialog(self) -> None:
+        dlg = MoodleDialog(self.cfg, self)
+        dlg.exec()
+
+    def _sync_devoirs(self, manual: bool) -> None:
+        if self._sync_task is not None:
+            if manual:
+                QMessageBox.information(self, "Devoirs Moodle", "Synchronisation déjà en cours.")
+            return
+        if not self.cfg.moodle.enabled:
+            if manual:
+                self._open_moodle_dialog()
+            return
+
+        from ..moodle.sync import run_sync
+
+        relay = ProgressRelay(self)
+        relay.message.connect(self._show_sync_step)
+        self._act_sync.setEnabled(False)
+        self._act_sync.setText("Synchronisation en cours…")
+        self._show_sync_step("démarrage…")
+
+        def _fin(texte: str) -> None:
+            self._sync_task = None
+            relay.deleteLater()
+            self._act_sync.setEnabled(True)
+            self._act_sync.setText("&Synchroniser les devoirs")
+            self.statusBar().showMessage(f"Devoirs Moodle — {texte}", 10000)
+
+        def _on_done(report) -> None:
+            _fin("synchro terminée." if not report.erreurs else f"terminée avec {len(report.erreurs)} erreur(s).")
+            if not report.erreurs:
+                self.cfg.moodle.last_sync = datetime.now().isoformat(timespec="seconds")
+                self.cfg.save()
+            if report.erreurs:
+                log.warning("Synchronisation des devoirs : %d erreur(s).", len(report.erreurs))
+                QMessageBox.warning(self, "Devoirs Moodle", report.to_text())
+            elif manual or report.has_changes():
+                log.info("Synchronisation des devoirs terminée.")
+                QMessageBox.information(self, "Devoirs Moodle", report.to_text())
+            else:
+                log.info("Synchronisation des devoirs : aucun changement.")
+
+        def _on_error(msg: str) -> None:
+            _fin("échec.")
+            log.error("Synchronisation des devoirs impossible : %s", msg)
+            QMessageBox.warning(self, "Devoirs Moodle", msg)
+
+        self._sync_task = run_async(
+            lambda: run_sync(self.cfg, progress=relay.message.emit), _on_done, _on_error, self
+        )
+
+    def _show_sync_step(self, etape: str) -> None:
+        """Affiche l'étape de synchro en cours (Moodle…, Apple…) dans la barre d'état."""
+        self.statusBar().showMessage(f"Devoirs Moodle — {etape}")
 
     def _build_central(self) -> None:
         central = QWidget()
@@ -631,6 +705,8 @@ class MainWindow(QMainWindow):
                 QSystemTrayIcon.MessageIcon.Information,
                 4000,
             )
+        if self._sync_task is not None:     # synchro Moodle en cours : ne pas détruire le thread
+            self._sync_task.wait(15000)
         self._tray.hide()
         event.accept()
         QApplication.quit()
