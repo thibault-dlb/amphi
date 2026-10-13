@@ -145,6 +145,42 @@ class MainWindow(QMainWindow):
         if self._sync_task is None:
             self.moodle_pane.set_status(self._sync_idle_text())
 
+    def _lancer_maj_moodle(self) -> None:
+        """Ouvre une console avec Claude Code qui exécute /maj-moodle dans le dossier d'Amphi."""
+        if self._claude_proc is not None and self._claude_proc.poll() is None:
+            QMessageBox.information(self, "Documents Moodle", "Claude Code est déjà ouvert pour /maj-moodle.")
+            return
+        claude = shutil.which("claude")
+        if not claude:
+            QMessageBox.warning(
+                self, "Documents Moodle",
+                "Claude Code (commande « claude ») est introuvable sur ce PC.\n"
+                "Installe-le, ou lance /maj-moodle à la main depuis un terminal.",
+            )
+            return
+        try:
+            self._claude_proc = subprocess.Popen(
+                ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", f"& '{claude}' '/maj-moodle'"],
+                cwd=str(APP_DIR),
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        except OSError as exc:
+            log.exception("Lancement de Claude Code impossible")
+            QMessageBox.warning(self, "Documents Moodle", f"Lancement de Claude Code impossible : {exc}")
+            return
+        log.info("Claude Code lancé pour /maj-moodle (pid %s).", self._claude_proc.pid)
+        self.moodle_pane.set_fetch_running(True)
+        self._claude_watch.start()
+
+    def _surveiller_claude(self) -> None:
+        """Console Claude fermée -> resynchronise pour mettre le tableau à jour."""
+        if self._claude_proc is None or self._claude_proc.poll() is not None:
+            self._claude_watch.stop()
+            self._claude_proc = None
+            self.moodle_pane.set_fetch_running(False)
+            log.info("Claude Code fermé : resynchronisation Moodle.")
+            self._sync_devoirs(manual=False)
+
     def _sync_devoirs(self, manual: bool) -> None:
         if self._sync_task is not None:
             if manual:
@@ -237,6 +273,11 @@ class MainWindow(QMainWindow):
         self._splitter.setHandleWidth(6)
         self.moodle_pane = MoodlePane()
         self.moodle_pane.sync_requested.connect(lambda: self._sync_devoirs(manual=True))
+        self.moodle_pane.fetch_requested.connect(self._lancer_maj_moodle)
+        self._claude_proc: subprocess.Popen | None = None
+        self._claude_watch = QTimer(self)
+        self._claude_watch.setInterval(2000)
+        self._claude_watch.timeout.connect(self._surveiller_claude)
         self.recorder_pane = RecorderPane(self.cfg)
         self.queue_pane = QueuePane(self.store)
         self._splitter.addWidget(self.moodle_pane)
