@@ -160,7 +160,9 @@ class MainWindow(QMainWindow):
             return
         try:
             self._claude_proc = subprocess.Popen(
-                ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", f"& '{claude}' '/maj-moodle'"],
+                # --model sonnet : alias toujours sur le Sonnet le plus récent
+                ["powershell.exe", "-NoLogo", "-NoProfile", "-Command",
+                 f"& '{claude}' --model sonnet '/maj-moodle'"],
                 cwd=str(APP_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
             )
