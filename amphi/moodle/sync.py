@@ -15,6 +15,7 @@ from typing import Callable, Protocol
 from zoneinfo import ZoneInfo
 
 from .client import MoodleError, MoodleTokenError, load_token, MoodleClient
+from .fichiers import documents_a_recuperer
 from .model import UID_PREFIX, Devoir, EventInfo, EventSpec
 
 log = logging.getLogger(__name__)
@@ -125,6 +126,9 @@ class SyncReport:
     en_retard: list[str] = field(default_factory=list)
     sans_date: list[str] = field(default_factory=list)
     erreurs: list[str] = field(default_factory=list)
+    nouveaux_documents: list[str] = field(default_factory=list)
+    cles_documents: list[str] = field(default_factory=list)
+    avertissements: list[str] = field(default_factory=list)
     dry_run: bool = False
 
     def has_changes(self) -> bool:
@@ -134,7 +138,7 @@ class SyncReport:
         lignes: list[str] = []
         if self.dry_run:
             lignes.append("[SIMULATION] Aucune modification écrite dans iCloud.")
-        sections = [
+        sections_agenda = [
             ("Nouveaux devoirs", self.ajoutes),
             ("Mis à jour", self.mis_a_jour),
             ("Échéances déplacées", self.deplaces),
@@ -142,13 +146,21 @@ class SyncReport:
             ("Événements supprimés", self.supprimes),
             ("En retard", self.en_retard),
             ("Sans date limite", self.sans_date),
-            ("Erreurs", self.erreurs),
         ]
-        for titre, items in sections:
+        sections_fin = [("Erreurs", self.erreurs), ("Avertissements", self.avertissements)]
+        for titre, items in sections_agenda:
             if items:
                 lignes.append(f"{titre} ({len(items)}) :")
                 lignes.extend(f"  • {it}" for it in items)
-        if not any(items for _, items in sections):
+        if self.nouveaux_documents:
+            n = len(self.nouveaux_documents)
+            lignes.append(f"Nouveaux documents sur Moodle ({n}) — lance /maj-moodle dans Claude Code :")
+            lignes.extend(f"  • {it}" for it in self.nouveaux_documents)
+        for titre, items in sections_fin:
+            if items:
+                lignes.append(f"{titre} ({len(items)}) :")
+                lignes.extend(f"  • {it}" for it in items)
+        if not any(items for _, items in sections_agenda + sections_fin[:1]):
             lignes.append("Rien de nouveau : l'agenda est à jour.")
         return "\n".join(lignes)
 
@@ -257,6 +269,28 @@ def _rapport_secours(devoirs: list[Devoir], maintenant: datetime, dry_run: bool,
     return rapport
 
 
+def _libelle_document(d: dict) -> str:
+    """Ligne affichée pour un document à récupérer (préfixe selon le statut)."""
+    prefixe = {"MAJ_DISPO": "mis à jour : ", "MANQUANT_LOCAL": "absent en local : "}.get(d["statut"], "")
+    dossier = d.get("dest") or "(racine de la matière)"
+    return f"{prefixe}« {d['nom']} » — {d['matiere']} → {dossier}"
+
+
+def ajouter_documents(rapport: SyncReport, cfg) -> SyncReport:
+    """Renseigne les documents Moodle à récupérer (lecture seule, non bloquant).
+
+    Une erreur devient un avertissement : elle ne bloque ni la synchro ni `last_sync`."""
+    try:
+        documents = documents_a_recuperer(cfg, progression=None)
+    except Exception as e:
+        log.warning("Synchro : recherche de nouveaux documents impossible : %s", e)
+        rapport.avertissements.append(f"Recherche de nouveaux documents impossible : {e}")
+        return rapport
+    rapport.nouveaux_documents = [_libelle_document(d) for d in documents]
+    rapport.cles_documents = [d["cle"] for d in documents]
+    return rapport
+
+
 def run_sync(cfg, dry_run: bool = False, progress: Progress | None = None) -> SyncReport:
     """Point d'entrée de l'interface : Moodle → iCloud. Ne lève jamais.
 
@@ -275,6 +309,19 @@ def run_sync(cfg, dry_run: bool = False, progress: Progress | None = None) -> Sy
         log.exception("Synchro : lecture Moodle impossible")
         return SyncReport(dry_run=dry_run, erreurs=[f"Lecture Moodle impossible : {e}"])
 
+    # Documents : calculés une fois, ajoutés quel que soit le chemin iCloud (y compris secours).
+    etape("Moodle : recherche de nouveaux documents…")
+    documents = ajouter_documents(SyncReport(dry_run=dry_run), cfg)
+    rapport = _synchro_icloud(devoirs, maintenant, dry_run, etape, nom_cal)
+    rapport.nouveaux_documents = documents.nouveaux_documents
+    rapport.cles_documents = documents.cles_documents
+    rapport.avertissements = documents.avertissements + rapport.avertissements
+    return rapport
+
+
+def _synchro_icloud(devoirs: list[Devoir], maintenant: datetime, dry_run: bool,
+                    etape: Progress, nom_cal: str) -> SyncReport:
+    """Partie iCloud de la synchro, après la lecture Moodle. Ne lève jamais."""
     etape("Apple : lecture des identifiants (trousseau Windows)…")
     try:
         from .secrets import get_credentials

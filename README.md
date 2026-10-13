@@ -208,6 +208,20 @@ passe habituel du compte ne fonctionne pas).
 - Ne sont **pas** mis dans l'agenda : les devoirs sans date limite et ceux déjà en retard
   (ils sont listés dans le résumé). Seules les sections « CAMPUS PARIS » / « … - PARIS » des
   cours de l'année sont lues ; les autres campus sont ignorés.
+- **Nouveaux documents** : chaque synchro compare aussi les fichiers publiés sur Moodle (campus
+  Paris) avec le dossier des cours défini dans les Réglages (`<dossier des cours>\<niveau>`).
+  S'il en manque, le résumé liste « Nouveaux documents sur Moodle (N) — lance /maj-moodle dans
+  Claude Code » ; au démarrage, la fenêtre ne s'ouvre que si cette liste a changé. Le skill
+  Claude Code `/maj-moodle` (`.claude/skills/maj-moodle/`) les télécharge et les range
+  (`Cours/`, `TP/TPn/`, `TD/TDn/`, `Projet/`, `DM/`) en tenant un registre
+  `.moodle_sync.json` dans le dossier des cours. Pour le rendre disponible depuis n'importe quel
+  dossier, copier ce dossier dans `%USERPROFILE%\.claude\skills\maj-moodle\`. Utilisable aussi
+  sans Claude :
+
+  ```powershell
+  .\.venv\Scripts\python .claude\skills\maj-moodle\driver.py plan    # rapport, sans écriture
+  .\.venv\Scripts\python .claude\skills\maj-moodle\driver.py apply   # télécharge et range
+  ```
 - Dépannage :
   - « Identifiants iCloud refusés » → refaire un mot de passe d'app (étape B) ;
   - « token Moodle expiré » → refaire l'étape A ;

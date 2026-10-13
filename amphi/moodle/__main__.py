@@ -15,7 +15,7 @@ from datetime import datetime
 from ..config import Config
 from ..logging_setup import setup
 from .client import MoodleError
-from .sync import PARIS, NullCalendar, load_devoirs, run_sync, sync
+from .sync import PARIS, NullCalendar, ajouter_documents, load_devoirs, run_sync, sync
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Erreur : {e}", file=sys.stderr)
             return 1
         rapport = sync(devoirs, NullCalendar(), datetime.now(PARIS), dry_run=True)
+        rapport = ajouter_documents(rapport, cfg)
     else:
         rapport = run_sync(cfg, dry_run=args.dry_run)
 

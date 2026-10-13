@@ -63,6 +63,7 @@ class MoodleConfig:
     calendar_name: str = "Moodle IPSA"  # calendrier iCloud cible (créé s'il n'existe pas)
     sync_on_startup: bool = True        # synchronisation silencieuse au lancement d'Amphi
     last_sync: str = ""                 # horodatage ISO de la dernière synchro réussie
+    docs_signales: list[str] = field(default_factory=list)  # clés des documents déjà signalés
 
 
 @dataclass
