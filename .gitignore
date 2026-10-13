@@ -16,3 +16,9 @@ logs/
 
 # Icône générée
 amphi/assets/
+
+# Token API Moodle (secret)
+.moodle_token
+
+# Lien d'abonnement iCal Moodle (secret)
+.moodle_ical_url

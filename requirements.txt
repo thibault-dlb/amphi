@@ -9,3 +9,7 @@ soundfile>=0.12.1         # écriture WAV/FLAC en flux
 numpy>=1.26,<3            # métrologie du signal (VU), partagé avec faster-whisper
 psutil>=5.9               # priorité process worker + mesure RAM au benchmark
 google-genai>=1.0.0       # résumé IA (Gemini 3.8 Flash) — optionnel à l'usage
+httpx==0.28.1             # API REST Moodle (devoirs)
+caldav==3.4.0             # agenda iCloud (CalDAV) pour les devoirs Moodle
+icalendar==7.3.0          # construction des événements iCal
+keyring==25.7.0           # mot de passe d'app Apple dans le Gestionnaire d'identifiants Windows
