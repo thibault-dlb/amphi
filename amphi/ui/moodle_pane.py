@@ -11,6 +11,7 @@ from .theme import COLORS
 
 class MoodlePane(QFrame):
     sync_requested = Signal()
+    fetch_requested = Signal()     # récupérer les documents via Claude Code (/maj-moodle)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -31,6 +32,18 @@ class MoodlePane(QFrame):
         self._btn.clicked.connect(lambda *_: self.sync_requested.emit())
         root.addWidget(self._btn)
 
+        self._fetch = QPushButton("📥  Récupérer les documents (Claude)")
+        self._fetch.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._fetch.setToolTip(
+            "Ouvre une console avec Claude Code qui lance /maj-moodle : télécharge et range "
+            "les documents non synchronisés. Amphi resynchronise quand la console est fermée."
+        )
+        self._fetch.clicked.connect(lambda *_: self.fetch_requested.emit())
+        self._fetch.setEnabled(False)
+        self._docs = 0
+        self._fetch_running = False
+        root.addWidget(self._fetch)
+
         self._status = QLabel()
         self._status.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
         self._status.setWordWrap(True)
@@ -50,3 +63,20 @@ class MoodlePane(QFrame):
 
     def set_data(self, a_faire: list[dict], documents: list[dict]) -> None:
         self._table.set_data(a_faire, documents)
+        self._docs = len(documents)
+        self._refresh_fetch()
+
+    def set_fetch_running(self, running: bool) -> None:
+        """Claude Code (/maj-moodle) est ouvert dans une console."""
+        self._fetch_running = running
+        self._refresh_fetch()
+
+    def _refresh_fetch(self) -> None:
+        if self._fetch_running:
+            self._fetch.setText("📥  Claude en cours…")
+            self._fetch.setToolTip("Ferme la console Claude : Amphi resynchronise et met le tableau à jour.")
+            self._fetch.setEnabled(False)
+        else:
+            n = f" ({self._docs})" if self._docs else ""
+            self._fetch.setText(f"📥  Récupérer les documents{n} (Claude)")
+            self._fetch.setEnabled(self._docs > 0)
