@@ -8,12 +8,14 @@ diffère. `run_sync()` est le point d'entrée utilisé par l'interface.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable, Protocol
 from zoneinfo import ZoneInfo
 
+from ..paths import APP_DIR
 from .client import MoodleError, MoodleTokenError, load_token, MoodleClient
 from .fichiers import documents_a_recuperer
 from .model import UID_PREFIX, Devoir, EventInfo, EventSpec
@@ -21,6 +23,7 @@ from .model import UID_PREFIX, Devoir, EventInfo, EventSpec
 log = logging.getLogger(__name__)
 
 PARIS = ZoneInfo("Europe/Paris")
+DERNIER_RAPPORT = APP_DIR / "moodle_last.json"   # tableau de la dernière synchro (relu au lancement)
 ALARMS = [timedelta(days=3), timedelta(days=1), timedelta(hours=3)]
 DEFAULT_BASE_URL = "https://moodle.ipsa.fr"
 DEFAULT_CALENDAR = "Moodle IPSA"
@@ -129,6 +132,8 @@ class SyncReport:
     nouveaux_documents: list[str] = field(default_factory=list)
     cles_documents: list[str] = field(default_factory=list)
     avertissements: list[str] = field(default_factory=list)
+    a_faire: list[dict] = field(default_factory=list)      # devoirs non rendus (tableau)
+    documents: list[dict] = field(default_factory=list)    # documents à récupérer (tableau)
     dry_run: bool = False
 
     def has_changes(self) -> bool:
@@ -165,6 +170,31 @@ class SyncReport:
         return "\n".join(lignes)
 
 
+def _etat_devoir(d: Devoir, maintenant: float) -> str:
+    """État d'un devoir non rendu : « sans date », « à rendre », « en retard » ou « fermé »."""
+    if not d.due:
+        return "sans date"
+    if d.due >= maintenant:
+        return "à rendre"
+    possible = (not d.cutoff) or d.cutoff > maintenant
+    return "en retard" if possible else "fermé"
+
+
+def ligne_devoir(d: dict) -> str:
+    """Cellule du tableau « Devoirs à faire » : nom — matière, puis échéance et état."""
+    tete = f"{d['nom']} — {d['matiere']}"
+    if not d.get("due"):
+        return f"{tete}\nsans date limite"
+    return f"{tete}\n{_fmt_echeance(d['due'])} · {d['etat']}"
+
+
+def ligne_document(d: dict) -> str:
+    """Cellule du tableau « Documents non synchronisés » (préfixe selon le statut)."""
+    prefixe = {"MAJ_DISPO": "mis à jour : ", "MANQUANT_LOCAL": "absent en local : "}.get(d["statut"], "")
+    dossier = d.get("dest") or "(racine de la matière)"
+    return f"{prefixe}« {d['nom']} »\n{d['matiere']} → {dossier}"
+
+
 def sync(
     devoirs: list[Devoir],
     cal: CalendarBackend,
@@ -184,6 +214,14 @@ def sync(
     for i, d in enumerate(devoirs, 1):
         etape(f"Apple : comparaison et écriture des événements ({i}/{len(devoirs)})…")
         libelle = f"{d.nom} — {d.matiere}"
+        if not d.rendu:
+            rapport.a_faire.append({
+                "nom": d.nom,
+                "matiere": d.matiere,
+                "due": d.due,
+                "etat": _etat_devoir(d, maintenant),
+                "url": d.url,
+            })
         if not d.due:
             rapport.sans_date.append(libelle)
             continue
@@ -241,6 +279,8 @@ def sync(
                 continue
         rapport.supprimes.append(uid)
 
+    # Tableau : devoirs datés par échéance, les « sans date » en dernier.
+    rapport.a_faire.sort(key=lambda x: (not x["due"], x["due"]))
     return rapport
 
 
@@ -288,6 +328,7 @@ def ajouter_documents(rapport: SyncReport, cfg) -> SyncReport:
         return rapport
     rapport.nouveaux_documents = [_libelle_document(d) for d in documents]
     rapport.cles_documents = [d["cle"] for d in documents]
+    rapport.documents = documents
     return rapport
 
 
@@ -315,6 +356,7 @@ def run_sync(cfg, dry_run: bool = False, progress: Progress | None = None) -> Sy
     rapport = _synchro_icloud(devoirs, maintenant, dry_run, etape, nom_cal)
     rapport.nouveaux_documents = documents.nouveaux_documents
     rapport.cles_documents = documents.cles_documents
+    rapport.documents = documents.documents
     rapport.avertissements = documents.avertissements + rapport.avertissements
     return rapport
 
@@ -357,3 +399,27 @@ def _synchro_icloud(devoirs: list[Devoir], maintenant: datetime, dry_run: bool,
         log.exception("Synchro : erreur iCloud inattendue")
         message = f"Erreur iCloud inattendue : {e}"
     return _rapport_secours(devoirs, maintenant, dry_run, message)
+
+
+def sauver_tableau(report: SyncReport) -> None:
+    """Écrit le tableau de la dernière synchro (atomique : fichier temporaire puis remplacement)."""
+    donnees = {
+        "date": datetime.now().isoformat(timespec="seconds"),
+        "a_faire": report.a_faire,
+        "documents": report.documents,
+    }
+    tmp = DERNIER_RAPPORT.with_name(DERNIER_RAPPORT.name + ".tmp")
+    tmp.write_text(json.dumps(donnees, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    tmp.replace(DERNIER_RAPPORT)
+
+
+def charger_tableau() -> dict | None:
+    """Tableau de la dernière synchro, ou None si absent ou illisible."""
+    try:
+        donnees = json.loads(DERNIER_RAPPORT.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(donnees, dict) or not isinstance(donnees.get("a_faire"), list) \
+            or not isinstance(donnees.get("documents"), list):
+        return None
+    return donnees
