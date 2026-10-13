@@ -166,13 +166,16 @@ class MainWindow(QMainWindow):
 
         def _on_done(report) -> None:
             _fin("synchro terminée." if not report.erreurs else f"terminée avec {len(report.erreurs)} erreur(s).")
+            nouveaux_docs = sorted(report.cles_documents) != sorted(self.cfg.moodle.docs_signales)
+            docs_presents = bool(report.cles_documents)
             if not report.erreurs:
                 self.cfg.moodle.last_sync = datetime.now().isoformat(timespec="seconds")
+                self.cfg.moodle.docs_signales = sorted(report.cles_documents)
                 self.cfg.save()
             if report.erreurs:
                 log.warning("Synchronisation des devoirs : %d erreur(s).", len(report.erreurs))
                 QMessageBox.warning(self, "Devoirs Moodle", report.to_text())
-            elif manual or report.has_changes():
+            elif manual or report.has_changes() or (docs_presents and nouveaux_docs):
                 log.info("Synchronisation des devoirs terminée.")
                 QMessageBox.information(self, "Devoirs Moodle", report.to_text())
             else:
