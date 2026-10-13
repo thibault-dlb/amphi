@@ -51,6 +51,7 @@ from .moodle_dialog import MoodleDialog
 from .queue_pane import QueuePane
 from .recorder_pane import RecorderPane
 from .screens import snap_to_screenpad
+from .theme import COLORS
 from .settings_dialog import SettingsDialog
 from .validate_dialog import ValidateDialog
 
@@ -138,6 +139,8 @@ class MainWindow(QMainWindow):
     def _open_moodle_dialog(self) -> None:
         dlg = MoodleDialog(self.cfg, self)
         dlg.exec()
+        if self._sync_task is None:
+            self._sync_label.setText(self._sync_idle_text())
 
     def _sync_devoirs(self, manual: bool) -> None:
         if self._sync_task is not None:
@@ -155,6 +158,8 @@ class MainWindow(QMainWindow):
         relay.message.connect(self._show_sync_step)
         self._act_sync.setEnabled(False)
         self._act_sync.setText("Synchronisation en cours…")
+        self._btn_sync.setEnabled(False)
+        self._btn_sync.setText("⟳  Synchro en cours…")
         self._show_sync_step("démarrage…")
 
         def _fin(texte: str) -> None:
@@ -162,16 +167,20 @@ class MainWindow(QMainWindow):
             relay.deleteLater()
             self._act_sync.setEnabled(True)
             self._act_sync.setText("&Synchroniser les devoirs")
-            self.statusBar().showMessage(f"Devoirs Moodle — {texte}", 10000)
+            self._btn_sync.setEnabled(True)
+            self._btn_sync.setText("⟳  Synchroniser Moodle")
+            self._sync_label.setText(texte or self._sync_idle_text())
 
         def _on_done(report) -> None:
-            _fin("synchro terminée." if not report.erreurs else f"terminée avec {len(report.erreurs)} erreur(s).")
             nouveaux_docs = sorted(report.cles_documents) != sorted(self.cfg.moodle.docs_signales)
             docs_presents = bool(report.cles_documents)
             if not report.erreurs:
                 self.cfg.moodle.last_sync = datetime.now().isoformat(timespec="seconds")
                 self.cfg.moodle.docs_signales = sorted(report.cles_documents)
                 self.cfg.save()
+                _fin("")
+            else:
+                _fin(f"Synchro terminée avec {len(report.erreurs)} erreur(s).")
             if report.erreurs:
                 log.warning("Synchronisation des devoirs : %d erreur(s).", len(report.erreurs))
                 QMessageBox.warning(self, "Devoirs Moodle", report.to_text())
@@ -182,7 +191,7 @@ class MainWindow(QMainWindow):
                 log.info("Synchronisation des devoirs : aucun changement.")
 
         def _on_error(msg: str) -> None:
-            _fin("échec.")
+            _fin("Échec de la synchro.")
             log.error("Synchronisation des devoirs impossible : %s", msg)
             QMessageBox.warning(self, "Devoirs Moodle", msg)
 
@@ -191,8 +200,20 @@ class MainWindow(QMainWindow):
         )
 
     def _show_sync_step(self, etape: str) -> None:
-        """Affiche l'étape de synchro en cours (Moodle…, Apple…) dans la barre d'état."""
-        self.statusBar().showMessage(f"Devoirs Moodle — {etape}")
+        """Affiche l'étape de synchro en cours (Moodle…, Apple…) à côté du bouton."""
+        self._sync_label.setText(etape)
+
+    def _sync_idle_text(self) -> str:
+        """Texte au repos : configuration à faire, ou date de la dernière synchro réussie."""
+        if not self.cfg.moodle.enabled:
+            return "Agenda Apple non configuré — clique pour le configurer."
+        if not self.cfg.moodle.last_sync:
+            return "Jamais synchronisé."
+        try:
+            quand = datetime.fromisoformat(self.cfg.moodle.last_sync).strftime("%d/%m %H:%M")
+        except ValueError:
+            return ""
+        return f"Dernière synchro : {quand}."
 
     def _build_central(self) -> None:
         central = QWidget()
@@ -213,6 +234,18 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 5)
         self._splitter.setStretchFactor(1, 4)
         v.addWidget(self._splitter, 1)
+
+        # Barre Moodle : synchro devoirs → agenda Apple + nouveaux documents
+        moodle = QHBoxLayout()
+        moodle.setSpacing(8)
+        self._btn_sync = QPushButton("⟳  Synchroniser Moodle")
+        self._btn_sync.setToolTip("Devoirs → agenda Apple et nouveaux documents Moodle (Ctrl+D)")
+        self._btn_sync.clicked.connect(lambda *_: self._sync_devoirs(manual=True))
+        moodle.addWidget(self._btn_sync)
+        self._sync_label = QLabel(self._sync_idle_text())
+        self._sync_label.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
+        moodle.addWidget(self._sync_label, 1)
+        v.addLayout(moodle)
 
         self.setCentralWidget(central)
         self._refresh_banner()

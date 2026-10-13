@@ -50,7 +50,7 @@ centrale). Réglable dans Réglages > Comportement (côté, ou désactiver l'anc
 | Réglages | menu **Fichier** ou `Ctrl+,` |
 | Toujours au-dessus | menu **Affichage** |
 | Ré-ancrer sur le ScreenPad | menu **Affichage** ou `Ctrl+Home` |
-| Synchroniser les devoirs Moodle → agenda Apple | menu **Moodle** ou `Ctrl+D` |
+| Synchroniser les devoirs Moodle → agenda Apple | bouton **⟳ Synchroniser Moodle** (bas de la fenêtre) ou `Ctrl+D` |
 
 À l'arrêt, l'enregistrement part en file. La transcription (puis le résumé) se
 lance **quand le laptop est sur secteur** ; sur batterie elle se met en pause et
@@ -172,8 +172,8 @@ passe habituel du compte ne fonctionne pas).
    calendrier est créé dans iCloud s'il n'existait pas.
 8. Cliquer **Enregistrer**. Le mot de passe va dans le Gestionnaire d'identifiants Windows
    (jamais dans `config.json`).
-9. Lancer une première synchro : **Ctrl+D** ou menu **Moodle → Synchroniser les devoirs**.
-   La barre d'état en bas de la fenêtre affiche l'étape en cours (« Moodle : état des dépôts
+9. Lancer une première synchro : bouton **⟳ Synchroniser Moodle** en bas de la fenêtre (ou **Ctrl+D**).
+   Le texte à côté du bouton affiche l'étape en cours (« Moodle : état des dépôts
    (3/9)… », « Apple : connexion à iCloud… »…), puis un résumé s'ouvre.
 10. Sur l'iPhone : app Calendrier → **Calendriers** (en bas) → vérifier que **Moodle IPSA**
     est coché.
