@@ -37,6 +37,7 @@ from ..audio.recorder import CAPTURE_WAV, SIDECAR, RecorderState, RecordingResul
 from ..config import Config
 from ..library.store import Store
 from ..models import Marker, RecordingMeta, Status
+from ..moodle.sync import charger_tableau, sauver_tableau
 from ..paths import (
     APP_DIR,
     ASSETS_DIR,
@@ -48,17 +49,18 @@ from ..paths import (
 )
 from .async_task import ProgressRelay, run_async
 from .moodle_dialog import MoodleDialog
+from .moodle_pane import MoodlePane
+from .moodle_report_dialog import MoodleReportDialog
 from .queue_pane import QueuePane
 from .recorder_pane import RecorderPane
 from .screens import snap_to_screenpad
-from .theme import COLORS
 from .settings_dialog import SettingsDialog
 from .validate_dialog import ValidateDialog
 
 log = logging.getLogger(__name__)
 
 _DETACHED = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
-_STACK_BELOW_WIDTH = 640  # en dessous : les deux panneaux s'empilent verticalement
+_STACK_BELOW_WIDTH = 960  # en dessous : les trois tuiles s'empilent verticalement
 
 
 class MainWindow(QMainWindow):
@@ -71,6 +73,7 @@ class MainWindow(QMainWindow):
         self._sleep_held = False
         self._glitch_seen = False
         self._sync_task = None
+        self._repartir_tailles = False   # tailles par défaut à appliquer au premier redimensionnement
 
         self.setWindowTitle("Amphi")
         self.setMinimumSize(440, 400)
@@ -140,7 +143,7 @@ class MainWindow(QMainWindow):
         dlg = MoodleDialog(self.cfg, self)
         dlg.exec()
         if self._sync_task is None:
-            self._sync_label.setText(self._sync_idle_text())
+            self.moodle_pane.set_status(self._sync_idle_text())
 
     def _sync_devoirs(self, manual: bool) -> None:
         if self._sync_task is not None:
@@ -158,8 +161,7 @@ class MainWindow(QMainWindow):
         relay.message.connect(self._show_sync_step)
         self._act_sync.setEnabled(False)
         self._act_sync.setText("Synchronisation en cours…")
-        self._btn_sync.setEnabled(False)
-        self._btn_sync.setText("⟳  Synchro en cours…")
+        self.moodle_pane.set_busy(True)
         self._show_sync_step("démarrage…")
 
         def _fin(texte: str) -> None:
@@ -167,9 +169,8 @@ class MainWindow(QMainWindow):
             relay.deleteLater()
             self._act_sync.setEnabled(True)
             self._act_sync.setText("&Synchroniser les devoirs")
-            self._btn_sync.setEnabled(True)
-            self._btn_sync.setText("⟳  Synchroniser Moodle")
-            self._sync_label.setText(texte or self._sync_idle_text())
+            self.moodle_pane.set_busy(False)
+            self.moodle_pane.set_status(texte or self._sync_idle_text())
 
         def _on_done(report) -> None:
             nouveaux_docs = sorted(report.cles_documents) != sorted(self.cfg.moodle.docs_signales)
@@ -181,14 +182,21 @@ class MainWindow(QMainWindow):
                 _fin("")
             else:
                 _fin(f"Synchro terminée avec {len(report.erreurs)} erreur(s).")
+            if not report.erreurs or report.a_faire or report.documents:
+                self.moodle_pane.set_data(report.a_faire, report.documents)
+                try:
+                    sauver_tableau(report)
+                except OSError:
+                    log.exception("Synchronisation des devoirs : tableau non enregistré.")
+            montrer = bool(report.erreurs) or manual or report.has_changes() or (docs_presents and nouveaux_docs)
             if report.erreurs:
                 log.warning("Synchronisation des devoirs : %d erreur(s).", len(report.erreurs))
-                QMessageBox.warning(self, "Devoirs Moodle", report.to_text())
-            elif manual or report.has_changes() or (docs_presents and nouveaux_docs):
+            elif montrer:
                 log.info("Synchronisation des devoirs terminée.")
-                QMessageBox.information(self, "Devoirs Moodle", report.to_text())
             else:
                 log.info("Synchronisation des devoirs : aucun changement.")
+            if montrer:
+                MoodleReportDialog(report, self).exec()
 
         def _on_error(msg: str) -> None:
             _fin("Échec de la synchro.")
@@ -200,8 +208,8 @@ class MainWindow(QMainWindow):
         )
 
     def _show_sync_step(self, etape: str) -> None:
-        """Affiche l'étape de synchro en cours (Moodle…, Apple…) à côté du bouton."""
-        self._sync_label.setText(etape)
+        """Affiche l'étape de synchro en cours (Moodle…, Apple…) sous le bouton."""
+        self.moodle_pane.set_status(etape)
 
     def _sync_idle_text(self) -> str:
         """Texte au repos : configuration à faire, ou date de la dernière synchro réussie."""
@@ -227,25 +235,23 @@ class MainWindow(QMainWindow):
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setChildrenCollapsible(False)
         self._splitter.setHandleWidth(6)
+        self.moodle_pane = MoodlePane()
+        self.moodle_pane.sync_requested.connect(lambda: self._sync_devoirs(manual=True))
         self.recorder_pane = RecorderPane(self.cfg)
         self.queue_pane = QueuePane(self.store)
+        self._splitter.addWidget(self.moodle_pane)
         self._splitter.addWidget(self.recorder_pane)
         self._splitter.addWidget(self.queue_pane)
-        self._splitter.setStretchFactor(0, 5)
-        self._splitter.setStretchFactor(1, 4)
+        self._splitter.setStretchFactor(0, 4)
+        self._splitter.setStretchFactor(1, 5)
+        self._splitter.setStretchFactor(2, 4)
         v.addWidget(self._splitter, 1)
 
-        # Barre Moodle : synchro devoirs → agenda Apple + nouveaux documents
-        moodle = QHBoxLayout()
-        moodle.setSpacing(8)
-        self._btn_sync = QPushButton("⟳  Synchroniser Moodle")
-        self._btn_sync.setToolTip("Devoirs → agenda Apple et nouveaux documents Moodle (Ctrl+D)")
-        self._btn_sync.clicked.connect(lambda *_: self._sync_devoirs(manual=True))
-        moodle.addWidget(self._btn_sync)
-        self._sync_label = QLabel(self._sync_idle_text())
-        self._sync_label.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
-        moodle.addWidget(self._sync_label, 1)
-        v.addLayout(moodle)
+        # Dernier tableau de synchro Moodle, conservé entre deux lancements
+        ancien = charger_tableau()
+        if ancien:
+            self.moodle_pane.set_data(ancien["a_faire"], ancien["documents"])
+        self.moodle_pane.set_status(self._sync_idle_text())
 
         self.setCentralWidget(central)
         self._refresh_banner()
@@ -313,10 +319,24 @@ class MainWindow(QMainWindow):
         )
         if self._splitter.orientation() != want:
             self._splitter.setOrientation(want)
-            if want == Qt.Orientation.Vertical:
-                self._splitter.setSizes([self.height() * 6 // 10, self.height() * 4 // 10])
-            else:
-                self._splitter.setSizes([self.width() * 55 // 100, self.width() * 45 // 100])
+            self._repartir_tailles = True
+        if self._repartir_tailles:
+            self._repartir_tailles = False
+            self._repartir_splitter()
+
+    def _repartir_splitter(self) -> None:
+        """Tailles par défaut des trois tuiles (Moodle, enregistrement, file), selon l'orientation.
+        Calculées sur la taille réelle du splitter (poignées retirées) pour qu'elles soient tenues."""
+        marge = self._splitter.handleWidth() * 2
+        if self._splitter.orientation() == Qt.Orientation.Vertical:
+            total = self._splitter.height() - marge
+            # L'enregistrement garde au moins sa hauteur utile (bouton Enregistrer non rogné).
+            enreg = max(self.recorder_pane.sizeHint().height(), total * 38 // 100)
+            reste = max(total - enreg, 0)
+            self._splitter.setSizes([reste * 55 // 100, enreg, reste - reste * 55 // 100])
+        else:
+            total = self._splitter.width() - marge
+            self._splitter.setSizes([total * 30 // 100, total * 32 // 100, total * 38 // 100])
 
     def _apply_always_on_top(self) -> None:
         was_visible = self.isVisible()
@@ -332,13 +352,19 @@ class MainWindow(QMainWindow):
         self._apply_always_on_top()
 
     def _restore_window(self) -> None:
+        restaure = False
         if self.cfg.splitter_state_b64:
-            try:
-                self._splitter.restoreState(
-                    QByteArray.fromBase64(self.cfg.splitter_state_b64.encode())
-                )
-            except Exception:  # noqa: BLE001
-                pass
+            etat = QByteArray.fromBase64(self.cfg.splitter_state_b64.encode())
+            # une sauvegarde à 2 tuiles (ancienne version) n'a pas la taille de l'état à 3 : ignorée
+            if etat.size() == self._splitter.saveState().size():
+                try:
+                    restaure = self._splitter.restoreState(etat)
+                except Exception:  # noqa: BLE001
+                    restaure = False
+        if not restaure:
+            # pas de sauvegarde valide : tailles par défaut, appliquées au premier redimensionnement
+            # (quand la taille du splitter est connue)
+            self._repartir_tailles = True
 
         if self.cfg.snap_screenpad_on_launch:
             snap_to_screenpad(self, self.cfg.screenpad_side)

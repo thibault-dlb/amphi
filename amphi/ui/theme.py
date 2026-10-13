@@ -87,6 +87,13 @@ QListWidget {{ background: {COLORS['bg']}; border: 1px solid {COLORS['border']};
 QListWidget::item {{ padding: 2px; }}
 QListWidget::item:selected {{ background: {COLORS['input']}; }}
 
+QTableWidget {{ background: {COLORS['panel']}; border: 1px solid {COLORS['border']}; border-radius: 8px;
+    font-size: 12px; outline: 0; }}
+QTableWidget::item {{ padding: 5px 7px; border: none; }}
+QHeaderView::section {{ background: {COLORS['input']}; color: {COLORS['dim']}; border: none;
+    border-bottom: 1px solid {COLORS['border']}; padding: 5px 7px; font-size: 11px; font-weight: 700; }}
+QTableCornerButton::section {{ background: {COLORS['input']}; border: none; }}
+
 QScrollArea {{ border: none; background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 9px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {COLORS['border']}; border-radius: 4px; min-height: 24px; }}

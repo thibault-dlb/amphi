@@ -22,3 +22,7 @@ amphi/assets/
 
 # Lien d'abonnement iCal Moodle (secret)
 .moodle_ical_url
+
+# Dernier tableau de synchro Moodle (devoirs et documents, relu au lancement)
+moodle_last.json
+moodle_last.json.tmp

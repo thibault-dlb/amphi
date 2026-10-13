@@ -50,7 +50,7 @@ centrale). Réglable dans Réglages > Comportement (côté, ou désactiver l'anc
 | Réglages | menu **Fichier** ou `Ctrl+,` |
 | Toujours au-dessus | menu **Affichage** |
 | Ré-ancrer sur le ScreenPad | menu **Affichage** ou `Ctrl+Home` |
-| Synchroniser les devoirs Moodle → agenda Apple | bouton **⟳ Synchroniser Moodle** (bas de la fenêtre) ou `Ctrl+D` |
+| Synchroniser les devoirs Moodle → agenda Apple | bouton **⟳ Synchroniser Moodle** (tuile « MOODLE », à gauche) ou `Ctrl+D` |
 
 À l'arrêt, l'enregistrement part en file. La transcription (puis le résumé) se
 lance **quand le laptop est sur secteur** ; sur batterie elle se met en pause et
@@ -172,9 +172,11 @@ passe habituel du compte ne fonctionne pas).
    calendrier est créé dans iCloud s'il n'existait pas.
 8. Cliquer **Enregistrer**. Le mot de passe va dans le Gestionnaire d'identifiants Windows
    (jamais dans `config.json`).
-9. Lancer une première synchro : bouton **⟳ Synchroniser Moodle** en bas de la fenêtre (ou **Ctrl+D**).
-   Le texte à côté du bouton affiche l'étape en cours (« Moodle : état des dépôts
-   (3/9)… », « Apple : connexion à iCloud… »…), puis un résumé s'ouvre.
+9. Lancer une première synchro : bouton **⟳ Synchroniser Moodle** dans la tuile « MOODLE »
+   (à gauche de l'écran d'accueil, ou **Ctrl+D**). Le texte sous le bouton affiche l'étape en
+   cours (« Moodle : état des dépôts (3/9)… », « Apple : connexion à iCloud… »…), puis le tableau
+   « Devoirs à faire | Documents non synchronisés » se met à jour et un résumé s'ouvre avec le
+   même tableau.
 10. Sur l'iPhone : app Calendrier → **Calendriers** (en bas) → vérifier que **Moodle IPSA**
     est coché.
 
@@ -182,6 +184,8 @@ passe habituel du compte ne fonctionne pas).
 
 - À chaque lancement, Amphi synchronise en arrière-plan (5 s après l'ouverture) ; une fenêtre
   n'apparaît que s'il y a du nouveau ou une erreur. **Ctrl+D** force une synchro.
+- La tuile « MOODLE » garde le tableau de la dernière synchro entre deux lancements (fichier
+  `moodle_last.json`, ignoré par git) ; double-clic sur un devoir ouvre sa page Moodle.
 - Moodle fait foi : un événement modifié ou supprimé à la main dans l'agenda est rétabli ; une
   échéance décalée par le prof est déplacée ; un devoir retiré de Moodle est supprimé.
 - Ne sont **pas** mis dans l'agenda : les devoirs sans date limite et ceux déjà en retard

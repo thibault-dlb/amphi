@@ -79,6 +79,7 @@ class RecorderPane(QFrame):
         self._mic = QLabel("Micro : —")
         self._mic.setObjectName("MicName")
         self._mic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._mic.setWordWrap(True)   # nom de micro long : ne pas imposer la largeur de la tuile
         root.addWidget(self._mic)
 
         root.addStretch(1)
