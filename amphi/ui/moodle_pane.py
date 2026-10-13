@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QVBoxLayout
 
 from .moodle_table import MoodleTable
 from .theme import COLORS
@@ -11,7 +11,8 @@ from .theme import COLORS
 
 class MoodlePane(QFrame):
     sync_requested = Signal()
-    fetch_requested = Signal()     # récupérer les documents via Claude Code (/maj-moodle)
+    fetch_requested = Signal()     # récupérer les documents via Claude Code, mode automatique
+    fetch_interactive_requested = Signal()   # idem, session Claude interactive (clic droit)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -38,6 +39,8 @@ class MoodlePane(QFrame):
             "les documents non synchronisés. Amphi resynchronise quand la console est fermée."
         )
         self._fetch.clicked.connect(lambda *_: self.fetch_requested.emit())
+        self._fetch.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._fetch.customContextMenuRequested.connect(self._menu_fetch)
         self._fetch.setEnabled(False)
         self._docs = 0
         self._fetch_running = False
@@ -77,13 +80,22 @@ class MoodlePane(QFrame):
     def _refresh_fetch(self) -> None:
         if self._fetch_running:
             self._fetch.setText("📥  Claude…")
-            self._fetch.setToolTip("Ferme la console Claude : Amphi resynchronise et met le tableau à jour.")
+            self._fetch.setToolTip("Claude travaille ; à la fermeture de sa console, Amphi resynchronise.")
             self._fetch.setEnabled(False)
         else:
             n = f" ({self._docs})" if self._docs else ""
             self._fetch.setText(f"📥  Récupérer{n}")
             self._fetch.setToolTip(
-                "Ouvre une console avec Claude Code qui lance /maj-moodle : télécharge et range "
-                "les documents non synchronisés. Amphi resynchronise quand la console est fermée."
+                "Claude Code (Sonnet) télécharge et range les documents non synchronisés, sans "
+                "question ; sa console se ferme dès la fin et Amphi resynchronise.\n"
+                "Clic droit : session Claude interactive."
             )
             self._fetch.setEnabled(self._docs > 0)
+
+    def _menu_fetch(self, pos) -> None:
+        if self._fetch_running:
+            return
+        menu = QMenu(self)
+        menu.addAction("Récupérer automatiquement", self.fetch_requested.emit)
+        menu.addAction("Ouvrir Claude en mode interactif…", self.fetch_interactive_requested.emit)
+        menu.exec(self._fetch.mapToGlobal(pos))

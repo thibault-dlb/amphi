@@ -218,11 +218,13 @@ passe habituel du compte ne fonctionne pas).
   Claude Code » ; au démarrage, la fenêtre ne s'ouvre que si cette liste a changé. Le skill
   Claude Code `/maj-moodle` (`.claude/skills/maj-moodle/`) les télécharge et les range
   (`Cours/`, `TP/TPn/`, `TD/TDn/`, `Projet/`, `DM/`) en tenant un registre
-  `.moodle_sync.json` dans le dossier des cours. Le bouton **📥 Récupérer** (à côté de « Synchroniser Moodle »)
-  de la tuile MOODLE ouvre une console où Claude Code (modèle Sonnet le plus récent,
-  `--model sonnet`) lance `/maj-moodle` (il faut
-  la commande `claude` installée) ; à la fermeture de la console, Amphi resynchronise et met le
-  tableau à jour. Pour rendre le skill disponible depuis n'importe quel
+  `.moodle_sync.json` dans le dossier des cours. Le bouton **📥 Récupérer** (à côté de « Synchroniser Moodle ») de la tuile
+  MOODLE ouvre une console où Claude Code (Sonnet le plus récent, `--model sonnet`) exécute
+  `/maj-moodle` **en mode automatique** (`claude -p`) : aucune question (documents ambigus →
+  `À classer/`), permissions limitées au script du skill et à la lecture, console fermée dès la
+  fin ; Amphi resynchronise alors avec Moodle et met le tableau à jour. **Clic droit** sur le
+  bouton : session Claude interactive (elle se ferme quand tu quittes Claude). Il faut la
+  commande `claude` installée. Pour rendre le skill disponible depuis n'importe quel
   dossier, copier ce dossier dans `%USERPROFILE%\.claude\skills\maj-moodle\`. Utilisable aussi
   sans Claude :
 

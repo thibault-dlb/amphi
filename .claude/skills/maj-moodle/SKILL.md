@@ -13,12 +13,12 @@ local et un registre `.moodle_sync.json`, propose un rangement, puis télécharg
   `C:\Users\thibd\OneDrive\Cours\B3`) — jamais codé en dur ; `--root` pour forcer.
 - **Amphi** est trouvé via `AMPHI_DIR`, sinon le dépôt qui contient ce skill, sinon `~/Amphi`.
   Le token Moodle est celui d'Amphi (`<Amphi>\.moodle_token`).
-- Le skill vit dans le dépôt Amphi (`.claude/skills/maj-moodle/`, versionné sur GitHub) et en
+- Le skill est fourni avec Amphi (`.claude/skills/maj-moodle/`) et en
   copie globale dans `~/.claude/skills/maj-moodle/` pour être lançable partout.
 
 ## Procédure (agent)
 
-Commandes Bash (Git Bash). Ne rien télécharger avant d'avoir lu le `plan`.
+Commandes Bash. Ne rien télécharger avant d'avoir lu le `plan`.
 
 ```bash
 PY=~/Amphi/.venv/Scripts/python.exe          # ou "$AMPHI_DIR/.venv/Scripts/python.exe"
@@ -62,24 +62,27 @@ $PY $D plan                                  # 2. rapport, aucune écriture
 5. **Mises à jour Moodle** : `$PY $D update` — remplace sur place si l'utilisateur n'a pas
    modifié le fichier local (même SHA-1 qu'au téléchargement), sinon enregistre la nouvelle
    version à côté (`<nom> (moodle JJ-MM)<ext>`) et le signale.
-6. **Sauvegarde git** du dossier des cours (c'est un dépôt) : n'ajouter **que** les lignes
-   `ÉCRIT: …` affichées + `.moodle_sync.json`, jamais `git add -A` :
-
-   ```bash
-   cd "<dossier des cours>" && git add .moodle_sync.json "<chemin ÉCRIT 1>" … && git commit -m "Moodle : …"
-   ```
-
-7. `$PY $D plan` doit finir sur `NOUVEAU : 0 … MANQUANT_LOCAL : 0`. Résumer à l'utilisateur ce
+6. `$PY $D plan` doit finir sur `NOUVEAU : 0 … MANQUANT_LOCAL : 0`. Résumer à l'utilisateur ce
    qui a été ajouté et où.
+
+## Mode automatique (lancé par Amphi)
+
+Quand l'invocation contient « mode automatique » (bouton 📥 Récupérer d'Amphi, `claude -p`) :
+personne ne lit la console, qui se ferme dès la fin.
+- Ne poser **aucune** question ; ne demander aucune confirmation.
+- Destination ambiguë (« à répartir », `À classer/`) → télécharger dans `À classer/` de la
+  matière (`--dest "CLE=À classer/"`). `--adopt` / `--ignore` seulement si c'est certain.
+- `MANQUANTS EN LOCAL` → re-télécharger (pas de `--ignore`).
+- Enchaîner `plan`, `apply`, `update`, puis s'arrêter **sans compte rendu ni résumé** : le
+  tableau d'Amphi, resynchronisé à la fermeture, montre le résultat.
 
 ## Gotchas
 
 - **Jamais d'autre campus.** Seules les sections « CAMPUS PARIS » / « … - PARIS » (+ section 0)
   sont lues ; si un cours a une section PARIS, les sections sans « PARIS » sont un autre campus
   (ex. Data Mining : « Courses » / « Practical Work »). Ne pas contourner.
-- **`git add -A` est dangereux** dans le dossier des cours : Amphi peut être en train d'écrire
-  un enregistrement (`<Matière>/Enregistrements/…`, transcription en cours). Ajouter fichier
-  par fichier.
+- **Ne jamais toucher à `<Matière>/Enregistrements/` ni aux `INDEX.md`** : gérés par Amphi
+  (un enregistrement peut être en cours d'écriture).
 - **Adoption par taille** : `DEJA_PRESENT_RENOMME` se fonde sur une taille identique — un
   fichier sans rapport de même taille serait adopté ; le rapport montre le nom proche, le
   vérifier. À l'inverse, un PDF renommé **et** réenregistré n'a plus la même taille → sort en
