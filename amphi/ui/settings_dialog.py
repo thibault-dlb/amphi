@@ -347,13 +347,15 @@ class SettingsDialog(QDialog):
         form.addRow(self._snap_launch)
 
         self._snap_side = QComboBox()
+        self._snap_side.addItem("Plein écran", "full")
         self._snap_side.addItem("Moitié droite", "right")
         self._snap_side.addItem("Moitié gauche", "left")
-        self._snap_side.setCurrentIndex(0 if self.cfg.screenpad_side != "left" else 1)
-        form.addRow("Côté du ScreenPad", self._snap_side)
+        self._snap_side.setCurrentIndex(max(0, self._snap_side.findData(self.cfg.screenpad_side)))
+        form.addRow("Position sur le ScreenPad", self._snap_side)
         snote = QLabel(
-            "Utilise le vrai snap Windows : la poignée de partage est commune avec "
-            "l'app ancrée sur l'autre moitié (elles se redimensionnent ensemble)."
+            "Plein écran : fenêtre maximisée sur tout le ScreenPad. Moitiés : vrai snap "
+            "Windows, la poignée de partage est commune avec l'app ancrée sur l'autre "
+            "moitié (elles se redimensionnent ensemble)."
         )
         snote.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
         snote.setWordWrap(True)

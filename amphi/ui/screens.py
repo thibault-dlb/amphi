@@ -1,5 +1,5 @@
-"""Détection du ScreenPad Plus + ancrage de la fenêtre sur une de ses moitiés,
-via le **vrai snap Windows** (Win+flèche) pour que le redimensionnement soit
+"""Détection du ScreenPad Plus + ancrage de la fenêtre en plein écran (maximisée)
+ou sur une de ses moitiés, via le **vrai snap Windows** (Win+flèche) pour que le redimensionnement soit
 solidaire de l'application ancrée sur l'autre moitié.
 
 Le ScreenPad Plus du UX482EA fait 1920×515 : rapport largeur/hauteur ~3.7,
@@ -148,8 +148,9 @@ def _roughly_at(widget, rect: QRect, tol: int = 90) -> bool:
     )
 
 
-def snap_to_screenpad(widget, side: str = "right", screen: QScreen | None = None) -> None:
-    """Ancre `widget` sur la moitié `side` ("right"/"left") du ScreenPad.
+def snap_to_screenpad(widget, side: str = "full", screen: QScreen | None = None) -> None:
+    """Ancre `widget` sur le ScreenPad : en plein écran (`side="full"`, fenêtre
+    maximisée) ou sur la moitié `side` ("right"/"left").
 
     Positionne d'abord la fenêtre par géométrie (fiable, sans effet de bord), puis
     tente le **vrai snap Windows** (SendInput Win+flèche, bloc atomique) pour que la
@@ -157,6 +158,9 @@ def snap_to_screenpad(widget, side: str = "right", screen: QScreen | None = None
     géométrie si le snap dérape.
     """
     screen = screen or target_screen()
+    if side == "full":
+        _maximize_on(widget, screen)
+        return
     rect = half_rect(screen, side)
     log.info(
         "Ancrage ScreenPad : écran %s @ %s, moitié %s -> %s",
@@ -202,6 +206,22 @@ def snap_to_screenpad(widget, side: str = "right", screen: QScreen | None = None
             _apply_rect(widget, rect)
 
     QTimer.singleShot(300, _native_snap)
+
+
+def _maximize_on(widget, screen: QScreen) -> None:
+    """Plein écran sur `screen` : placée d'abord sur l'écran (sinon Windows maximise
+    sur l'écran courant), puis maximisée — barre de titre et menu conservés."""
+    log.info("Ancrage ScreenPad : écran %s @ %s, plein écran", screen.name(), screen.geometry())
+    widget.winId()
+    handle = widget.windowHandle()
+    if handle is not None and handle.screen() is not screen:
+        handle.setScreen(screen)
+    _apply_rect(widget, screen.availableGeometry())
+    widget.showMaximized()
+    widget.raise_()
+    widget.activateWindow()
+    # multi-DPI : la maximisation peut viser l'ancien écran au 1er passage -> on la refait
+    QTimer.singleShot(0, lambda: (_apply_rect(widget, screen.availableGeometry()), widget.showMaximized()))
 
 
 # rétro-compat : ancien nom

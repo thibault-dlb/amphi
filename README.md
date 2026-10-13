@@ -1,8 +1,8 @@
 # Amphi
 
 Enregistreur de cours + transcription locale (Faster-Whisper) + résumé automatique
-(Gemini). Conçu pour un **ASUS ZenBook Duo 14 (UX482EA)** : fenêtre sur la moitié
-gauche du ScreenPad Plus, transcription sur CPU (pas de GPU/NPU exploitable sur ce
+(Gemini). Conçu pour un **ASUS ZenBook Duo 14 (UX482EA)** : fenêtre en plein écran
+sur le ScreenPad Plus, transcription sur CPU (pas de GPU/NPU exploitable sur ce
 laptop), rangement dans `OneDrive\Cours\<Niveau>\<Matière>\`.
 
 ## Installation
@@ -36,9 +36,11 @@ Le script crée `.venv`, installe les dépendances, télécharge le modèle
 Fenêtre Windows normale : redimensionnable, `Win`+flèches (snap), minimisation,
 menus **Fichier** / **Affichage**, icône dans la zone de notification.
 
-Au lancement, l'app **s'ancre sur la moitié droite du ScreenPad** (vrai snap Windows :
-si tu ancres une autre app à gauche, les deux se redimensionnent ensemble par la poignée
-centrale). Réglable dans Réglages > Comportement (côté, ou désactiver l'ancrage auto).
+Au lancement, l'app **s'ouvre en plein écran sur le ScreenPad** (fenêtre maximisée : les
+trois tuiles Moodle / Enregistrement / File d'attente côte à côte). Réglable dans Réglages >
+Comportement : plein écran, moitié droite ou moitié gauche (vrai snap Windows : avec une
+autre app ancrée sur l'autre moitié, les deux se redimensionnent ensemble), ou désactiver
+l'ancrage auto.
 
 | Action | Où |
 |---|---|
