@@ -22,10 +22,15 @@ log = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)   # une ligne par appel Moodle : inutile
 
 TOKEN_PATH = APP_DIR / ".moodle_token"
-RETRIES = 2                 # tentatives supplémentaires sur erreur réseau
-RETRY_DELAY_S = 2.0
+RETRIES = 5                 # tentatives supplémentaires sur erreur réseau
+RETRY_DELAY_S = 3.0
 
 _MATIERE_PREFIX = re.compile(r"^\d{2}-[A-Za-z0-9]+-\s*")
+_CODE_COURS = re.compile(r"^\d{2}-([A-Za-z0-9]+)-")
+# Code du cours (« 26-PBI-… ») → dossier local, quand le nom Moodle ne correspond pas
+MATIERES_FORCEES = {
+    "PBI": "Projet Bachelor IPSA",
+}
 _YEAR_PREFIX = re.compile(r"^(\d{2})-")
 _BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _CLOSE_BLOCK = re.compile(r"</(?:p|li)\s*>", re.IGNORECASE)
@@ -56,6 +61,9 @@ def matiere_from_fullname(fullname: str) -> str:
     """« 26-BIN313-Apprentissage automatique : Machine learning »
     → « Apprentissage automatique - Machine learning » (nom de dossier B3)."""
     texte = html.unescape(fullname or "")
+    code = _CODE_COURS.match(texte)
+    if code and code.group(1).upper() in MATIERES_FORCEES:
+        return MATIERES_FORCEES[code.group(1).upper()]
     texte = _MATIERE_PREFIX.sub("", texte, count=1)
     texte = texte.replace(":", "-")
     texte = sanitize_component(texte)
