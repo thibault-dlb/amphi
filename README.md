@@ -5,6 +5,8 @@ Enregistreur de cours + transcription locale (Faster-Whisper) + résumé automat
 sur le ScreenPad Plus, transcription sur CPU (pas de GPU/NPU exploitable sur ce
 laptop), rangement dans `OneDrive\Cours\<Niveau>\<Matière>\`.
 
+Documentation détaillée : [`docs/`](docs/README.md).
+
 ## Installation
 
 ```powershell
