@@ -7,6 +7,7 @@ sur https://aistudio.google.com/apikey (palier gratuit → modèles Flash).
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable
 
@@ -137,12 +138,18 @@ def _is_overloaded(exc: Exception) -> bool:
     s = str(exc)
     return (
         "503" in s or "UNAVAILABLE" in s or "overloaded" in s.lower() or "429" in s
-        or _is_timeout(exc)
+        or "504" in s or "DEADLINE_EXCEEDED" in s or _is_timeout(exc)
     )
 
 
+def _is_daily_quota(exc: Exception) -> bool:
+    """429 sur le quota journalier (palier gratuit) : inutile de relancer avant des heures."""
+    s = str(exc)
+    return "429" in s and ("PerDay" in s or re.search(r"retry in \d+h", s) is not None)
+
+
 def _overload_code(exc: Exception) -> str:
-    if _is_timeout(exc):
+    if _is_timeout(exc) or "504" in str(exc):
         return "sans réponse"
     return "429 quota" if "429" in str(exc) else "503"
 
@@ -259,6 +266,7 @@ def generate(
 
     size = f"{(len(system) + len(user) + 999) // 1000} k caractères"
     last_exc: Exception | None = None
+    real_exc: Exception | None = None  # dernière erreur hors « modèle introuvable »
     note = ""  # pourquoi on est passé au modèle courant, affiché jusqu'à la réponse
     for mi, model in enumerate(models):
         label = model if mi == 0 else f"{model} (repli {mi}/{len(models) - 1})"
@@ -283,6 +291,11 @@ def generate(
                     log.info("%s indisponible pour cette clé — modèle suivant", model)
                     note = f"{model} indisponible"
                     break
+                real_exc = exc
+                if _is_daily_quota(exc):
+                    log.warning("%s : quota journalier épuisé — modèle suivant", model)
+                    note = f"{model} quota du jour épuisé"
+                    break
                 if _is_overloaded(exc) and attempt < 3:
                     wait = 5 * (2**attempt)
                     log.warning("%s saturé (tentative %d/4) — attente %ds", model, attempt + 1, wait)
@@ -299,7 +312,9 @@ def generate(
                     note = f"{model} saturé après 4 essais"
                     break
                 raise SummaryError(f"{type(exc).__name__}: {exc}") from exc
-    raise SummaryError(str(last_exc) if last_exc else "échec inconnu")
+    # un repli introuvable (404) ne doit pas masquer la vraie cause (saturation, quota)
+    exc = real_exc or last_exc
+    raise SummaryError(str(exc) if exc else "échec inconnu")
 
 
 def _q(value: str) -> str:

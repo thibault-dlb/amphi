@@ -29,8 +29,9 @@ Le script crée `.venv`, installe les dépendances, télécharge le modèle
    <https://aistudio.google.com/apikey>, puis « Tester ».
    ⚠️ L'abonnement **Google AI Plus ne fournit pas** de clé — c'est un produit
    développeur distinct, gratuit pour les modèles Flash.
-   Modèle par défaut : `gemini-flash-latest`. En cas de saturation Google (erreur 503),
-   l'app bascule seule sur `gemini-3.5-flash` puis `gemini-3.6-flash` ; si tout est
+   Modèle par défaut : `gemini-flash-latest`. En cas de saturation Google (503, 504, délai dépassé)
+   ou de quota du jour épuisé, l'app bascule seule sur `gemini-3.5-flash`, `gemini-3.7-flash`,
+   `gemini-3-flash-preview` puis `gemini-flash-lite-latest` ; si tout est
    saturé, le résumé est reporté (bouton « Relancer le résumé » dans la file).
 
 ## Usage
