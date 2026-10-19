@@ -205,6 +205,15 @@ class Store:
         ).fetchall()
         return [Recording.from_row(r) for r in rows]
 
+    def last_langue(self, matiere: str) -> str | None:
+        """Langue du dernier enregistrement de cette matière (None si aucun)."""
+        row = self._con.execute(
+            "SELECT langue FROM recordings WHERE matiere=? COLLATE NOCASE "
+            "ORDER BY created_at DESC LIMIT 1",
+            (matiere.strip(),),
+        ).fetchone()
+        return row[0] if row else None
+
     def active(self) -> list[Recording]:
         marks = ",".join("?" * len(Status.ACTIONABLE))
         rows = self._con.execute(

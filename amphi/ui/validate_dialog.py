@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..audio.recorder import RecordingResult
 from ..config import Config
 from ..library import scan
+from ..library.store import Store
 from ..models import RecordingMeta
 from ..paths import sanitize_component
 from .theme import COLORS
@@ -34,9 +35,12 @@ class ValidateDialog(QDialog):
     DELETE = 2  # code de retour custom
     RESUME = 3  # rouvrir l'enregistrement pour le poursuivre
 
-    def __init__(self, cfg: Config, rec: RecordingResult, parent=None) -> None:
+    def __init__(
+        self, cfg: Config, rec: RecordingResult, store: Store | None = None, parent=None
+    ) -> None:
         super().__init__(parent)
         self.cfg = cfg
+        self.store = store
         self.rec = rec
         self.result_meta: RecordingMeta | None = None
         self.setWindowTitle("Classer l'enregistrement")
@@ -152,6 +156,9 @@ class ValidateDialog(QDialog):
     def _on_matiere_changed(self, text: str) -> None:
         known = text.strip() in self.cfg.matieres or not text.strip()
         self._remember.setVisible(not known)
+        # langue du dernier cours de cette matière, sinon la langue par défaut
+        langue = self.store.last_langue(text) if self.store and text.strip() else None
+        (self._en if (langue or self.cfg.default_langue) == "en" else self._fr).setChecked(True)
 
     def _on_niveau_changed(self, text: str) -> None:
         text = text.strip()

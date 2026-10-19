@@ -521,7 +521,7 @@ class MainWindow(QMainWindow):
             self._sleep_held = False
 
     def _on_recording_finished(self, result: RecordingResult) -> None:
-        dlg = ValidateDialog(self.cfg, result, self)
+        dlg = ValidateDialog(self.cfg, result, self.store, self)
         code = dlg.exec()
         if code == ValidateDialog.RESUME:
             if self.recorder_pane.is_recording():
