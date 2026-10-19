@@ -327,9 +327,8 @@ def _maybe_summarize(job: Recording, cfg: Config, store: Store, target: Path) ->
         return
 
     transcript_text = (target / "transcript.md").read_text(encoding="utf-8")
-    body = summ.strip_front_matter(transcript_text)
-    # rien de transcrit (silence, test) -> inutile d'appeler Gemini
-    if "aucune parole détectée" in body or len(body.strip()) < 150:
+    # rien de transcrit (silence, test, amphi inaudible) -> inutile d'appeler Gemini
+    if not summ.has_speech(transcript_text):
         store.update(job.id, status=Status.DONE, stage="terminé (rien à résumer)")
         return
 

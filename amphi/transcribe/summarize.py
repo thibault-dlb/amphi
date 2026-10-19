@@ -63,6 +63,17 @@ def strip_front_matter(md: str) -> str:
     return md
 
 
+def has_speech(transcript_md: str, min_letters: int = 100) -> bool:
+    """Le transcript contient du texte réel : pas seulement « (aucune parole détectée) », ni
+    des horodatages suivis de « ... » (hallucinations de Whisper filtrées sur un amphi inaudible)."""
+    body = strip_front_matter(transcript_md)
+    if "aucune parole détectée" in body:
+        return False
+    text = "\n".join(line for line in body.splitlines() if not line.lstrip().startswith("#"))
+    text = re.sub(r"\*\*\[[0-9:]+\]\*\*", " ", text)  # **[hh:mm:ss]**
+    return sum(c.isalpha() for c in text) >= min_letters
+
+
 def _client(api_key: str):
     try:
         from google import genai  # noqa: PLC0415

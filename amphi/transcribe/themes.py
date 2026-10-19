@@ -34,7 +34,7 @@ from ..library import scan
 from ..logging_setup import setup
 from ..models import RecordingMeta
 from ..paths import INDEX_LOCK
-from .summarize import StatusFn, SummaryError, SummarySkipped, generate, strip_front_matter
+from .summarize import StatusFn, SummaryError, SummarySkipped, generate, has_speech
 
 log = logging.getLogger(__name__)
 
@@ -163,12 +163,6 @@ def _read(transcript: Path) -> tuple[str, str]:
 
 def _sha1(path: Path) -> str:
     return hashlib.sha1(path.read_bytes()).hexdigest()
-
-
-def _has_speech(md: str) -> bool:
-    """Même règle que pour le résumé (worker._maybe_summarize)."""
-    body = strip_front_matter(md)
-    return "aucune parole détectée" not in body and len(body.strip()) >= 150
 
 
 def _locations(transcript: Path) -> tuple[Path, Path, Path]:
@@ -573,7 +567,7 @@ def index_course(
         raise SummarySkipped("clé Gemini absente")
     text, sha1 = _read(transcript)
     numbered = numbered_lines(text)
-    if not numbered or not _has_speech(text):
+    if not numbered or not has_speech(text):
         raise SummarySkipped("rien à indexer")
 
     subject, json_path, _ = _locations(transcript)
@@ -655,7 +649,7 @@ def refresh(subject: Path, recordings_subdir: str) -> None:
 def _dry_run(transcript: Path, meta: RecordingMeta, label: str) -> None:
     text, _ = _read(transcript)
     numbered = numbered_lines(text)
-    if not numbered or not _has_speech(text):
+    if not numbered or not has_speech(text):
         raise SummarySkipped("rien à indexer")
     _, json_path, _ = _locations(transcript)
     prompt = build_prompt(load_index(json_path, meta.matiere, meta.niveau), meta, numbered)
