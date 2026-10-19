@@ -50,7 +50,6 @@ from ..paths import (
 from .async_task import ProgressRelay, run_async
 from .moodle_dialog import MoodleDialog
 from .moodle_pane import MoodlePane
-from .moodle_report_dialog import MoodleReportDialog
 from .queue_pane import QueuePane
 from .recorder_pane import RecorderPane
 from .screens import snap_to_screenpad
@@ -207,35 +206,29 @@ class MainWindow(QMainWindow):
             self.moodle_pane.set_status(texte or self._sync_idle_text())
 
         def _on_done(report) -> None:
-            nouveaux_docs = sorted(report.cles_documents) != sorted(self.cfg.moodle.docs_signales)
-            docs_presents = bool(report.cles_documents)
+            # Pas de fenêtre de résumé : le tableau et la ligne d'état suffisent.
             if not report.erreurs:
                 self.cfg.moodle.last_sync = datetime.now().isoformat(timespec="seconds")
-                self.cfg.moodle.docs_signales = sorted(report.cles_documents)
                 self.cfg.save()
                 _fin("")
             else:
-                _fin(f"Synchro terminée avec {len(report.erreurs)} erreur(s).")
+                _fin(f"Synchro terminée avec {len(report.erreurs)} erreur(s) : {report.erreurs[0]}")
             if not report.erreurs or report.a_faire or report.documents:
                 self.moodle_pane.set_data(report.a_faire, report.documents)
                 try:
                     sauver_tableau(report)
                 except OSError:
                     log.exception("Synchronisation des devoirs : tableau non enregistré.")
-            montrer = bool(report.erreurs) or manual or report.has_changes() or (docs_presents and nouveaux_docs)
             if report.erreurs:
                 log.warning("Synchronisation des devoirs : %d erreur(s).", len(report.erreurs))
-            elif montrer:
-                log.info("Synchronisation des devoirs terminée.")
             else:
-                log.info("Synchronisation des devoirs : aucun changement.")
-            if montrer:
-                MoodleReportDialog(report, self).exec()
+                log.info("Synchronisation des devoirs terminée.")
+            for ligne in report.to_text().splitlines():
+                log.info("  %s", ligne)
 
         def _on_error(msg: str) -> None:
-            _fin("Échec de la synchro.")
+            _fin(f"Échec de la synchro : {msg}")
             log.error("Synchronisation des devoirs impossible : %s", msg)
-            QMessageBox.warning(self, "Devoirs Moodle", msg)
 
         self._sync_task = run_async(
             lambda: run_sync(self.cfg, progress=relay.message.emit), _on_done, _on_error, self

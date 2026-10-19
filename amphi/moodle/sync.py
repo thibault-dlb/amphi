@@ -132,7 +132,7 @@ class SyncReport:
     nouveaux_documents: list[str] = field(default_factory=list)
     cles_documents: list[str] = field(default_factory=list)
     avertissements: list[str] = field(default_factory=list)
-    a_faire: list[dict] = field(default_factory=list)      # devoirs non rendus (tableau)
+    a_faire: list[dict] = field(default_factory=list)      # tous les devoirs, rendus en dernier (tableau)
     documents: list[dict] = field(default_factory=list)    # documents à récupérer (tableau)
     dry_run: bool = False
 
@@ -171,7 +171,9 @@ class SyncReport:
 
 
 def _etat_devoir(d: Devoir, maintenant: float) -> str:
-    """État d'un devoir non rendu : « sans date », « à rendre », « en retard » ou « fermé »."""
+    """État d'un devoir : « rendu », « sans date », « à rendre », « en retard » ou « fermé »."""
+    if d.rendu:
+        return "rendu"
     if not d.due:
         return "sans date"
     if d.due >= maintenant:
@@ -180,11 +182,24 @@ def _etat_devoir(d: Devoir, maintenant: float) -> str:
     return "en retard" if possible else "fermé"
 
 
+# Ordre du tableau : à rendre (sans date en fin de groupe), en retard, fermé, rendu
+_RANG_ETAT = {"à rendre": 0, "sans date": 0, "en retard": 1, "fermé": 2, "rendu": 3}
+
+
+def _cle_tri_devoir(x: dict, maintenant: float) -> tuple:
+    """Par état, puis échéance la plus proche de maintenant (à venir comme passée)."""
+    rang = _RANG_ETAT.get(x["etat"], 0)
+    if not x["due"]:
+        return (rang, 1, 0)
+    return (rang, 0, abs(x["due"] - maintenant))
+
+
 def ligne_devoir(d: dict) -> str:
-    """Cellule du tableau « Devoirs à faire » : nom — matière, puis échéance et état."""
+    """Cellule du tableau « Devoirs » : nom — matière, puis échéance et état."""
     tete = f"{d['nom']} — {d['matiere']}"
     if not d.get("due"):
-        return f"{tete}\nsans date limite"
+        suffixe = " · rendu" if d.get("etat") == "rendu" else ""
+        return f"{tete}\nsans date limite{suffixe}"
     return f"{tete}\n{_fmt_echeance(d['due'])} · {d['etat']}"
 
 
@@ -214,14 +229,13 @@ def sync(
     for i, d in enumerate(devoirs, 1):
         etape(f"Apple : comparaison et écriture des événements ({i}/{len(devoirs)})…")
         libelle = f"{d.nom} — {d.matiere}"
-        if not d.rendu:
-            rapport.a_faire.append({
-                "nom": d.nom,
-                "matiere": d.matiere,
-                "due": d.due,
-                "etat": _etat_devoir(d, maintenant),
-                "url": d.url,
-            })
+        rapport.a_faire.append({
+            "nom": d.nom,
+            "matiere": d.matiere,
+            "due": d.due,
+            "etat": _etat_devoir(d, maintenant),
+            "url": d.url,
+        })
         if not d.due:
             rapport.sans_date.append(libelle)
             continue
@@ -279,8 +293,7 @@ def sync(
                 continue
         rapport.supprimes.append(uid)
 
-    # Tableau : devoirs datés par échéance, les « sans date » en dernier.
-    rapport.a_faire.sort(key=lambda x: (not x["due"], x["due"]))
+    rapport.a_faire.sort(key=lambda x: _cle_tri_devoir(x, maintenant))
     return rapport
 
 

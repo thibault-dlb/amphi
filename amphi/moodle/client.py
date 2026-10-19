@@ -31,6 +31,8 @@ _CODE_COURS = re.compile(r"^\d{2}-([A-Za-z0-9]+)-")
 MATIERES_FORCEES = {
     "PBI": "Projet Bachelor IPSA",
 }
+# Campus à exclure (noms de section) ; tout ce qui n'en mentionne aucun est gardé pour les devoirs
+AUTRES_CAMPUS = ("TOULOUSE",)
 _YEAR_PREFIX = re.compile(r"^(\d{2})-")
 _BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _CLOSE_BLOCK = re.compile(r"</(?:p|li)\s*>", re.IGNORECASE)
@@ -93,6 +95,22 @@ def _cmids_autorises(sections: list[dict[str, Any]]) -> set[int]:
         if s.get("section") == 0 or s.get("section") in numeros_paris:
             autorises |= {m["id"] for m in s.get("modules", []) or []}
     return autorises
+
+
+def _cmids_devoirs(sections: list[dict[str, Any]]) -> set[int]:
+    """Modules retenus pour les devoirs : tout le cours, sauf les sections d'un autre
+    campus (nom contenant « TOULOUSE », ou placées sous un en-tête « CAMPUS TOULOUSE »
+    jusqu'au prochain en-tête « CAMPUS … »). Les sections sans campus sont gardées."""
+    retenus: set[int] = set()
+    sous_autre_campus = False
+    for s in sections:
+        nom = (s.get("name") or "").upper()
+        if "CAMPUS" in nom:
+            sous_autre_campus = "PARIS" not in nom
+        autre = any(c in nom for c in AUTRES_CAMPUS) or (sous_autre_campus and "PARIS" not in nom)
+        if not autre:
+            retenus |= {m["id"] for m in s.get("modules", []) or []}
+    return retenus
 
 
 def _statut_devoir(reponse: dict[str, Any]) -> tuple[str, int, list[str]]:
@@ -181,7 +199,7 @@ class MoodleClient:
         return payload
 
     def fetch_devoirs(self, progress: Callable[[str], None] | None = None) -> list[Devoir]:
-        """Liste les devoirs (mod_assign) de l'année courante, campus Paris uniquement.
+        """Liste les devoirs (mod_assign) de l'année courante, hors autres campus.
 
         `progress` reçoit un libellé à chaque étape (affichage dans l'interface)."""
         etape = progress or (lambda _msg: None)
@@ -207,9 +225,9 @@ class MoodleClient:
 
         autorises: dict[int, set[int]] = {}
         for i, cid in enumerate(ids_cours, 1):
-            etape(f"Moodle : sections Paris des cours ({i}/{len(ids_cours)})…")
+            etape(f"Moodle : sections des cours ({i}/{len(ids_cours)})…")
             contenu = self.call("core_course_get_contents", courseid=cid)
-            autorises[cid] = _cmids_autorises(contenu)
+            autorises[cid] = _cmids_devoirs(contenu)
 
         etape("Moodle : liste des devoirs…")
         reponse = self.call("mod_assign_get_assignments", courseids=ids_cours)
@@ -241,5 +259,5 @@ class MoodleClient:
                 )
             )
 
-        log.info("Moodle : %d cours retenus, %d devoirs (campus Paris)", len(retenus), len(devoirs))
+        log.info("Moodle : %d cours retenus, %d devoirs (hors autres campus)", len(retenus), len(devoirs))
         return devoirs

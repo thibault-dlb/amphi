@@ -12,6 +12,12 @@ sections du **campus Paris** sont lus : sections dont le nom contient « PARIS �
 section 0. Un cours sans aucune section « PARIS » est lu en entier. Les autres campus sont
 toujours ignorés.
 
+Exception pour les **devoirs** : tout le cours est lu, sections sans campus comprises
+(ex. Data Mining : « Practical Work »). Seules sont écartées les sections d'un autre campus
+(`AUTRES_CAMPUS` dans `amphi/moodle/client.py`, aujourd'hui `TOULOUSE`), c'est-à-dire celles
+dont le nom le contient ou qui sont placées sous un en-tête « CAMPUS TOULOUSE ». Les
+**documents** restent limités au campus Paris.
+
 ## Mise en place
 
 Deux connexions à faire une seule fois. La procédure pas à pas (captures du token, mot de
@@ -68,7 +74,9 @@ Règles :
 - Pas mis dans l'agenda : les devoirs **sans date limite** et ceux **déjà en retard** (listés
   dans le rapport).
 
-Le tableau de la tuile MOODLE (« Devoirs à faire | Documents non synchronisés ») est conservé
+Le tableau de la tuile MOODLE (« Devoirs | Documents non synchronisés ») liste tous les devoirs
+dans cet ordre : à rendre (les « sans date » en fin de groupe), en retard, fermés, rendus ; dans
+chaque groupe, l'échéance la plus proche de maintenant d'abord. Il est conservé
 entre deux lancements dans `moodle_last.json`. Double-clic sur un devoir : ouvre sa page
 Moodle.
 
@@ -90,9 +98,9 @@ reconnecte après une veille, coupure brève), avant d'afficher « Moodle injoig
 ## Documents Moodle → dossier des cours
 
 Chaque synchro compare aussi les fichiers publiés (ressources et dossiers Moodle, campus Paris)
-avec `<dossier des cours>\<niveau>`. S'il en manque, le rapport affiche « Nouveaux documents
-sur Moodle (N) — lance /maj-moodle dans Claude Code ». Au démarrage, la fenêtre ne s'ouvre que
-si cette liste a changé (`docs_signales`).
+avec `<dossier des cours>\<niveau>`. S'il en manque, ils apparaissent dans la colonne
+« Documents non synchronisés » du tableau. Aucune fenêtre ne s'ouvre après une synchro : une
+erreur s'affiche sous le bouton, et le rapport complet est écrit dans `amphi.log`.
 
 ### Bouton 📥 Récupérer
 

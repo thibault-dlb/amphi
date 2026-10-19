@@ -1,4 +1,4 @@
-"""Tableau « Devoirs à faire | Documents non synchronisés » (tuile Moodle et résumé de synchro)."""
+"""Tableau « Devoirs | Documents non synchronisés » (tuile Moodle et résumé de synchro)."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ _COULEUR_ETAT = {
     "en retard": COLORS["amber"],
     "fermé": COLORS["rec"],
     "sans date": COLORS["dim"],
+    "rendu": COLORS["green"],
 }
 _URL = Qt.ItemDataRole.UserRole
 
@@ -25,7 +26,7 @@ _URL = Qt.ItemDataRole.UserRole
 class MoodleTable(QTableWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(0, 2, parent)
-        self.setHorizontalHeaderLabels(["Devoirs à faire", "Documents\nnon synchronisés"])
+        self.setHorizontalHeaderLabels(["Devoirs", "Documents\nnon synchronisés"])
         self.verticalHeader().setVisible(False)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.horizontalHeader().setHighlightSections(False)
@@ -46,7 +47,7 @@ class MoodleTable(QTableWidget):
         self.setRowCount(max(len(a_faire), len(documents), 1))
 
         if not a_faire:
-            self.setItem(0, 0, _cellule_vide("Aucun devoir à faire 🎉"))
+            self.setItem(0, 0, _cellule_vide("Aucun devoir"))
         for i, d in enumerate(a_faire):
             item = QTableWidgetItem(ligne_devoir(d))
             url = d.get("url") or ""

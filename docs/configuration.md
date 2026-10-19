@@ -83,7 +83,7 @@ matière vide donne `Divers`.
 | `calendar_name` | `Moodle IPSA` | calendrier iCloud cible (créé s'il manque) |
 | `sync_on_startup` | `true` | synchro silencieuse au lancement |
 | `last_sync` | — | horodatage de la dernière synchro réussie |
-| `docs_signales` | `[]` | documents déjà signalés (évite de rouvrir le rapport) |
+| `docs_signales` | `[]` | plus utilisé (servait à ne pas rouvrir le rapport de synchro) |
 
 ## Fichiers locaux d'Amphi
 

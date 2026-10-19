@@ -180,26 +180,25 @@ passe habituel du compte ne fonctionne pas).
 9. Lancer une première synchro : bouton **⟳ Synchroniser Moodle** dans la tuile « MOODLE »
    (à gauche de l'écran d'accueil, ou **Ctrl+D**). Le texte sous le bouton affiche l'étape en
    cours (« Moodle : état des dépôts (3/9)… », « Apple : connexion à iCloud… »…), puis le tableau
-   « Devoirs à faire | Documents non synchronisés » se met à jour et un résumé s'ouvre avec le
-   même tableau.
+   « Devoirs | Documents non synchronisés » se met à jour (aucune fenêtre ne s'ouvre ; le détail
+   est dans `amphi.log`).
 10. Sur l'iPhone : app Calendrier → **Calendriers** (en bas) → vérifier que **Moodle IPSA**
     est coché.
 
 ### Ensuite
 
-- À chaque lancement, Amphi synchronise en arrière-plan (5 s après l'ouverture) ; une fenêtre
-  n'apparaît que s'il y a du nouveau ou une erreur. **Ctrl+D** force une synchro.
+- À chaque lancement, Amphi synchronise en arrière-plan (5 s après l'ouverture), sans fenêtre ;
+  une erreur s'affiche sous le bouton. **Ctrl+D** force une synchro.
 - La tuile « MOODLE » garde le tableau de la dernière synchro entre deux lancements (fichier
   `moodle_last.json`, ignoré par git) ; double-clic sur un devoir ouvre sa page Moodle.
 - Moodle fait foi : un événement modifié ou supprimé à la main dans l'agenda est rétabli ; une
   échéance décalée par le prof est déplacée ; un devoir retiré de Moodle est supprimé.
 - Ne sont **pas** mis dans l'agenda : les devoirs sans date limite et ceux déjà en retard
-  (ils sont listés dans le résumé). Seules les sections « CAMPUS PARIS » / « … - PARIS » des
-  cours de l'année sont lues ; les autres campus sont ignorés.
+  (ils restent dans le tableau). Tous les devoirs des cours de l'année sont lus, sections
+  sans campus comprises ; seules les sections d'un autre campus (Toulouse) sont ignorées.
 - **Nouveaux documents** : chaque synchro compare aussi les fichiers publiés sur Moodle (campus
   Paris) avec le dossier des cours défini dans les Réglages (`<dossier des cours>\<niveau>`).
-  S'il en manque, le résumé liste « Nouveaux documents sur Moodle (N) — lance /maj-moodle dans
-  Claude Code » ; au démarrage, la fenêtre ne s'ouvre que si cette liste a changé. Le skill
+  S'il en manque, ils apparaissent dans la colonne « Documents non synchronisés ». Le skill
   Claude Code `/maj-moodle` (`.claude/skills/maj-moodle/`) les télécharge et les range
   (`Cours/`, `TP/TPn/`, `TD/TDn/`, `Projet/`, `DM/`) en tenant un registre
   `.moodle_sync.json` dans le dossier des cours. Le bouton **📥 Récupérer** (à côté de « Synchroniser Moodle ») de la tuile
