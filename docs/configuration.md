@@ -22,8 +22,8 @@ matière vide donne `Divers`.
 
 | Clé | Défaut | Rôle |
 |---|---|---|
-| `mic_name_hint` | `microphones numériques` | sous-chaîne pour choisir le micro |
-| `mic_device_id` | `null` | périphérique imposé (sinon heuristique) |
+| `mic_name_hint` | `""` | sous-chaîne pour choisir le micro ; vide = entrée par défaut de Windows |
+| `mic_device_id` | `null` | périphérique imposé (sinon `mic_name_hint`, puis entrée par défaut) |
 | `mic_gain_db` | `0` | gain numérique à la capture (0 à 24 dB) |
 | `keep_audio_format` | `flac` | `flac`, `wav`, `opus` ou `none` |
 | `sample_rate` | `16000` | fréquence enregistrée dans les métadonnées (la capture se fait à la fréquence native du micro) |
@@ -41,8 +41,6 @@ matière vide donne `Divers`.
 
 | Clé | Défaut | Rôle |
 |---|---|---|
-| `snap_screenpad_on_launch` | `true` | ancrer sur le ScreenPad au lancement |
-| `screenpad_side` | `full` | `full`, `right` ou `left` |
 | `always_on_top` | `false` | toujours au-dessus |
 | `window_geometry_b64`, `window_state_b64`, `splitter_state_b64` | — | état de la fenêtre (géré par Amphi) |
 | `onboarding_done` | `false` | masque les bandeaux de première configuration |
@@ -52,8 +50,11 @@ matière vide donne `Divers`.
 | Clé | Défaut | Rôle |
 |---|---|---|
 | `model` | `large-v3-turbo` | modèle faster-whisper |
-| `compute_type` | `int8` | `int8`, `int8_float32` ou `float32` (benchmark) |
-| `cpu_threads` | `4` | threads CPU (benchmark) |
+| `device` | `auto` | `auto` = GPU NVIDIA (CUDA) si utilisable, sinon CPU ; `cuda` = GPU obligatoire (erreur sinon) ; `cpu` = jamais le GPU |
+| `gpu_compute_type` | `float16` | quantification sur GPU : `float16`, `int8_float16` (moins de VRAM) ou `float32` (benchmark) |
+| `gpu_index` | `0` | numéro du GPU CUDA |
+| `compute_type` | `int8` | quantification sur CPU : `int8`, `int8_float32` ou `float32` (benchmark) |
+| `cpu_threads` | `8` | threads CPU, repli sans GPU (benchmark) |
 | `beam_size` | `5` | largeur du faisceau |
 | `vad_filter` | `true` | filtre de silences |
 | `word_timestamps` | `true` | horodatage par mot |
@@ -100,5 +101,16 @@ Tous à la racine d'Amphi, ignorés par git :
 | `.worker.lock`, `.worker.stop`, `.recording`, `.force_battery`, `.index.lock` | drapeaux entre processus (voir [architecture.md](architecture.md)) |
 | `amphi\assets\` | icône générée |
 
-À sauvegarder si on change de PC : `config.json`, `amphi.db`, `.moodle_token`. Les livrables
-(audio, transcripts, résumés, index) sont dans OneDrive.
+À sauvegarder si on change de PC : `config.json` et `.moodle_token`. Les livrables (audio,
+transcripts, résumés, index) sont dans OneDrive. `amphi.db` (file d'attente et historique) est
+**local** : sur un nouveau PC ou après une réinstallation, il est vide, mais Amphi le
+reconstruit au démarrage à partir des dossiers `<matière>\Enregistrements\*\meta.json` de
+OneDrive (`amphi/library/importer.py`, lecture seule, sans doublon). Les cours importés
+apparaissent « terminé » (ou « résumé échoué » s'il n'y a pas de `resume.md`, avec le bouton
+« Relancer le résumé » : rien n'est envoyé à Gemini sans clic). Import manuel ou simulation :
+
+```powershell
+.\.venv\Scripts\python -m amphi.library.importer --dry-run     # voir sans écrire
+.\.venv\Scripts\python -m amphi.library.importer               # niveau des Réglages
+.\.venv\Scripts\python -m amphi.library.importer --all-levels  # B1, B2, B3…
+```

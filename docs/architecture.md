@@ -1,7 +1,7 @@
 # Architecture
 
-Python 3.11, interface Qt (PySide6), Windows uniquement (API `kernel32`, Gestionnaire
-d'identifiants, ScreenPad).
+Python 3.11+, interface Qt (PySide6), Windows uniquement (API `kernel32`, Gestionnaire
+d'identifiants).
 
 ## Arborescence
 
@@ -20,13 +20,15 @@ amphi/
     encode.py       ffmpeg : FLAC/Opus, réparation WAV, découpe, normalisation
   transcribe/
     worker.py       processus de transcription (file, reprise, pool des résumés)
-    engine.py       enveloppe faster-whisper (chargement, annulation, segments)
+    engine.py       enveloppe faster-whisper (GPU/CPU, repli, annulation, segments)
+    cuda.py         détection du GPU NVIDIA, DLL cuBLAS/cuDNN venues de pip
     markdown.py     transcript.md (en-tête YAML, paragraphes, marqueurs)
     summarize.py    appels Gemini (repli, relances, délai), resume.md
     themes.py       index des thèmes : prompt, fusion, INDEX.md, CLI de rattrapage
   library/
     store.py        base SQLite partagée (mode WAL)
     scan.py         découverte des niveaux et matières dans OneDrive\Cours
+    importer.py     recrée l'historique local depuis les meta.json livrés dans OneDrive
   moodle/
     client.py       API REST Moodle (lecture), nom de matière, sections Paris, relances réseau
     model.py        Devoir, EventSpec, EventInfo
@@ -39,7 +41,7 @@ amphi/
   ui/               fenêtre principale, tuiles (Moodle, enregistrement, file), dialogues
 .claude/skills/maj-moodle/   skill Claude Code (SKILL.md + driver.py)
 tools/
-  benchmark.py      mesure le débit réel, écrit compute_type / cpu_threads
+  benchmark.py      mesure le débit réel (GPU + CPU), écrit device / gpu_compute_type / compute_type / cpu_threads
   make_icon.py      génère l'icône
 install.ps1         installation complète
 run.pyw             lanceur sans console
@@ -50,7 +52,7 @@ run.pyw             lanceur sans console
 | Processus | Lancement | Rôle |
 |---|---|---|
 | UI | `run.pyw` / `python -m amphi` | fenêtre, capture audio, synchro Moodle (thread), lance le worker |
-| Worker | `python -m amphi.transcribe.worker` | transcription (thread principal, CPU), résumés et index (pool de threads, réseau) |
+| Worker | `python -m amphi.transcribe.worker` | transcription (thread principal, GPU ou CPU), résumés et index (pool de threads, réseau) |
 | Claude Code | bouton 📥 Récupérer | `/maj-moodle` dans une console PowerShell |
 
 L'UI et le worker communiquent uniquement par la **base SQLite** et des **fichiers
@@ -99,6 +101,7 @@ transcription → résumé ou index entamé → résumé à faire ; à égalité
 | Paquet | Usage |
 |---|---|
 | `faster-whisper`, `av` (<17) | transcription ; PyAV 17+ casse faster-whisper 1.2.1 |
+| `nvidia-cublas-cu12`, `nvidia-cudnn-cu12` | bibliothèques CUDA pour CTranslate2 (GPU NVIDIA), sans toolkit CUDA |
 | `PySide6` | interface |
 | `sounddevice`, `soundfile`, `numpy` | capture, écriture WAV, niveaux |
 | `psutil` | priorité du worker, verrou, benchmark |

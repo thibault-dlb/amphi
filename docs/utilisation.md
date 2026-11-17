@@ -2,19 +2,10 @@
 
 ## La fenêtre
 
-Au lancement, Amphi s'ouvre **en plein écran sur le ScreenPad** avec trois tuiles côte à
-côte : **Moodle**, **Enregistrement**, **File d'attente**. C'est une fenêtre Windows normale
-(redimensionnable, `Win`+flèches, minimisation, icône dans la zone de notification).
-
-Réglages → *Comportement* → position au lancement :
-
-- **plein écran** (défaut) ;
-- **moitié droite** / **moitié gauche** : vrai snap Windows, une autre app ancrée sur l'autre
-  moitié se redimensionne avec Amphi ;
-- ancrage automatique désactivé.
-
-`Ctrl+Home` (menu **Affichage**) ré-ancre la fenêtre sur le ScreenPad. **Affichage → Toujours
-au-dessus** garde Amphi devant les autres fenêtres.
+Au lancement, Amphi s'ouvre centré sur l'écran principal (ou à sa dernière position) avec
+trois tuiles côte à côte : **Moodle**, **Enregistrement**, **File d'attente**. C'est une
+fenêtre Windows normale (redimensionnable, `Win`+flèches, minimisation, icône dans la zone de
+notification). **Affichage → Toujours au-dessus** garde Amphi devant les autres fenêtres.
 
 Fermer la fenêtre ne quitte pas Amphi : utiliser **Fichier → Quitter** (`Ctrl+Q`) ou
 l'icône de la zone de notification → **Quitter**.
@@ -69,7 +60,6 @@ Actions disponibles selon l'état :
 | Marqueur « important » | `Ctrl+M` |
 | Réglages | `Ctrl+,` |
 | Quitter | `Ctrl+Q` |
-| Ré-ancrer sur le ScreenPad | `Ctrl+Home` |
 | Synchroniser Moodle | `Ctrl+D` |
 
 ## Ce qui est produit

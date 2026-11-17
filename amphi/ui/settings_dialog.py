@@ -37,13 +37,33 @@ _AUDIO_FORMATS = [
     ("opus", "Opus — voix compressée (~15 Mo/h)"),
     ("none", "Ne pas garder l'audio"),
 ]
-_COMPUTE_TYPES = ["int8", "int8_float32", "float32"]
+_COMPUTE_TYPES = ["int8", "int8_float32", "float32"]            # CPU
+_GPU_COMPUTE_TYPES = ["float16", "int8_float16", "float32"]     # GPU CUDA
+_DEVICES = [
+    ("auto", "Auto — GPU NVIDIA si disponible, sinon CPU"),
+    ("cuda", "GPU NVIDIA (CUDA) uniquement"),
+    ("cpu", "CPU uniquement"),
+]
 _MODELS = [
     ("large-v3-turbo", "large-v3-turbo — recommandé (rapide, précision quasi identique)"),
     ("large-v3", "large-v3 — précision maximale, ~2× plus lent"),
     ("large-v2", "large-v2 — alternative, parfois moins d'hallucinations"),
     ("medium", "medium — léger, précision en retrait"),
 ]
+
+
+def _gpu_summary() -> str:
+    """Ligne d'état du GPU pour l'onglet moteur (nvidia-smi : rapide, sans charger CUDA)."""
+    from ..transcribe.cuda import gpu_info
+
+    info = gpu_info()
+    if info is None:
+        return "Aucun GPU NVIDIA détecté : la transcription tournera sur le CPU."
+    return (
+        f"GPU détecté : {info.name} · {info.vram_mb} Mo de VRAM · pilote {info.driver}. "
+        "float16 est le plus rapide ; int8_float16 économise de la VRAM (utile avec large-v3 "
+        "sur 4 Go)."
+    )
 
 
 class SettingsDialog(QDialog):
@@ -166,7 +186,7 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Modèle", self._model)
         mhint = QLabel(
-            "Mesuré sur ce PC : turbo ≈ 1,3× la durée du cours, large-v3 ≈ 2,5×. "
+            "Mesuré sur ce PC (turbo) : ~0,04× la durée du cours sur GPU, ~0,4× sur CPU. "
             "Sur du cours d'ingénierie la transcription est identique — large-v3 ne "
             "reprend l'avantage que sur audio difficile (bruit, accents, voix qui se chevauchent)."
         )
@@ -174,11 +194,28 @@ class SettingsDialog(QDialog):
         mhint.setWordWrap(True)
         form.addRow("", mhint)
 
+        self._device = QComboBox()
+        for value, label in _DEVICES:
+            self._device.addItem(label, value)
+        self._device.setCurrentIndex(max(0, self._device.findData(self.cfg.engine.device)))
+        form.addRow("Calcul", self._device)
+
+        self._gpu_compute = QComboBox()
+        self._gpu_compute.addItems(_GPU_COMPUTE_TYPES)
+        if self.cfg.engine.gpu_compute_type in _GPU_COMPUTE_TYPES:
+            self._gpu_compute.setCurrentText(self.cfg.engine.gpu_compute_type)
+        form.addRow("Quantification (GPU)", self._gpu_compute)
+
+        self._gpu_note = QLabel(_gpu_summary())
+        self._gpu_note.setStyleSheet(f"color:{COLORS['dim']};font-size:11px;")
+        self._gpu_note.setWordWrap(True)
+        form.addRow("", self._gpu_note)
+
         self._compute = QComboBox()
         self._compute.addItems(_COMPUTE_TYPES)
         if self.cfg.engine.compute_type in _COMPUTE_TYPES:
             self._compute.setCurrentText(self.cfg.engine.compute_type)
-        form.addRow("Quantification", self._compute)
+        form.addRow("Quantification (CPU)", self._compute)
 
         self._threads = QSpinBox()
         self._threads.setRange(1, 16)
@@ -411,6 +448,8 @@ class SettingsDialog(QDialog):
         dlg.exec()
         fresh = Config.load()
         self._compute.setCurrentText(fresh.engine.compute_type)
+        self._gpu_compute.setCurrentText(fresh.engine.gpu_compute_type)
+        self._device.setCurrentIndex(max(0, self._device.findData(fresh.engine.device)))
         self._threads.setValue(fresh.engine.cpu_threads)
         self._beam.setValue(fresh.engine.beam_size)
         self._bench_notes.setText(fresh.engine.benchmark_notes or "—")
@@ -472,6 +511,8 @@ class SettingsDialog(QDialog):
         c.mic_device_id = self._mic.currentData()
         c.mic_gain_db = float(self._gain.value())
         c.engine.model = self._model.currentData()
+        c.engine.device = self._device.currentData()
+        c.engine.gpu_compute_type = self._gpu_compute.currentText()
         c.engine.compute_type = self._compute.currentText()
         c.engine.cpu_threads = self._threads.value()
         c.engine.beam_size = self._beam.value()

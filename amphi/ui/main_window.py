@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         self._apply_always_on_top()
         self._restore_window()
 
+        QTimer.singleShot(100, self._import_existing)
         QTimer.singleShot(400, self._recover_orphans)
         self._housekeeping = QTimer(self)
         self._housekeeping.setInterval(5000)
@@ -328,6 +329,7 @@ class MainWindow(QMainWindow):
         self.queue_pane.open_folder_requested.connect(self._open_folder)
         self.queue_pane.retry_requested.connect(self._retry)
         self.queue_pane.retry_summary_requested.connect(self._retry_summary)
+        self.queue_pane.retranscribe_requested.connect(self._retranscribe)
         self.queue_pane.remove_requested.connect(self._remove)
         self.queue_pane.pause_requested.connect(self._pause_transcription)
         self.queue_pane.resume_requested.connect(self._resume_transcription)
@@ -542,6 +544,7 @@ class MainWindow(QMainWindow):
         target = unique_dir(target.parent, target.name)
         engine = {
             "model": self.cfg.engine.model,
+            "device": self.cfg.engine.device,
             "compute_type": self.cfg.engine.compute_type,
             "cpu_threads": self.cfg.engine.cpu_threads,
         }
@@ -656,6 +659,40 @@ class MainWindow(QMainWindow):
         self.queue_pane.refresh()
         self.ensure_worker()
 
+    def _retranscribe(self, rec_id: int) -> None:
+        """Retranscrit un cours déjà livré avec le moteur actuel (library/retranscribe.py)."""
+        from ..library import retranscribe
+
+        rec = self.store.get(rec_id)
+        if rec is None or not retranscribe.can_retranscribe(rec):
+            QMessageBox.warning(
+                self, "Retranscrire",
+                "Ce cours ne peut pas être retranscrit (archive audio introuvable ?).",
+            )
+            return
+        text = (
+            f"Retranscrire « {rec.titre} » ({rec.date}) ?\n\n"
+            "• le transcript actuel est remplacé ;\n"
+            "• le résumé et l'index des thèmes sont refaits par Gemini (les anciens sont "
+            "remplacés) ;\n"
+            "• l'archive audio n'est pas modifiée."
+        )
+        if RECORDING_FLAG.exists():
+            text += (
+                "\n\nUn enregistrement est en cours : la transcription tournera en même "
+                "temps, ce qui peut ralentir la capture."
+            )
+        if QMessageBox.question(self, "Retranscrire", text) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            retranscribe.prepare(self.store, rec_id, paused=False)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Retranscrire", str(exc))
+            return
+        log.info("Retranscription du cours %d demandée.", rec_id)
+        self.queue_pane.refresh()
+        self.ensure_worker()
+
     def _retry_summary(self, rec_id: int) -> None:
         self.store.update(rec_id, status=Status.TRANSCRIBED, error="", stage="")
         self.queue_pane.refresh()
@@ -700,6 +737,25 @@ class MainWindow(QMainWindow):
         self._apply_always_on_top()
         self._refresh_banner()
         self.ensure_worker()
+
+    # ------------------------------------------- historique depuis OneDrive
+    def _import_existing(self) -> None:
+        """Les cours déjà livrés dans OneDrive (autre PC, base réinitialisée) rejoignent
+        l'historique local. Lecture seule sur OneDrive, sans doublon (library/importer.py)."""
+        if not self.cfg.niveau:
+            return
+        from ..library.importer import import_existing
+
+        try:
+            report = import_existing(
+                self.store, self.cfg.courses_root_path(), self.cfg.niveau,
+                self.cfg.recordings_subdir,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("Import de l'historique depuis OneDrive")
+            return
+        if report.imported:
+            self.queue_pane.refresh()
 
     # -------------------------------------------------- récupération crash
     def _recover_orphans(self) -> None:

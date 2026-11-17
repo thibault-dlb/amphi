@@ -57,23 +57,35 @@ Une ligne JSONL tronquée par un crash est ignorée et refaite.
 
 ## Moteur
 
-faster-whisper (CTranslate2) sur CPU. Réglages dans **Réglages → Micro & moteur** :
+faster-whisper (CTranslate2), sur **GPU NVIDIA (CUDA)** quand il est utilisable, sinon sur
+CPU. Les bibliothèques CUDA (cuBLAS, cuDNN) viennent de pip (`amphi/transcribe/cuda.py` les
+rend visibles à Windows) ; seul le pilote NVIDIA est requis. Le journal `worker.log` indique
+le périphérique choisi (« Modèle prêt (cuda, int8_float16) ») et, en cas de repli, pourquoi.
+Réglages dans **Réglages → Micro & moteur** :
 
 | Réglage | Défaut | Note |
 |---|---|---|
 | `model` | `large-v3-turbo` | `large-v3` : même texte sur du cours d'ingénierie, 4× plus lent ; plus robuste sur audio bruité |
-| `compute_type` | `int8` | fixé par le benchmark |
-| `cpu_threads` | `4` | fixé par le benchmark |
+| `device` | `auto` | `auto` (GPU si utilisable, sinon CPU), `cuda` (GPU obligatoire) ou `cpu` |
+| `gpu_compute_type` | `float16` (benchmark : `int8_float16`) | `int8_float16` divise la VRAM par ~2 pour une vitesse équivalente |
+| `compute_type` | `int8` | quantification sur CPU, fixée par le benchmark |
+| `cpu_threads` | `8` | repli CPU, fixé par le benchmark |
 | `beam_size` | `5` | 1–2 accélère, léger coût en précision |
 | `vad_filter` | oui | saute les silences |
 | `normalize_speech` | oui | remonte la parole (filtre `speechnorm` de ffmpeg) avant Whisper, sur une copie : l'archive reste l'original |
 
-Vitesse mesurée sur le ZenBook (RTF = temps de calcul / durée audio) :
+Vitesse mesurée sur le XPS 15 (RTF = temps de calcul / durée audio), `large-v3-turbo`,
+beam 5 :
 
-| Modèle | RTF | 1 h 30 de cours ≈ |
-|---|---|---|
-| `large-v3-turbo` (int8, 8 threads) | 0,74 | ~1 h de calcul |
-| `large-v3` (int8, 4 threads) | 3,1 | ~4 h 40 de calcul |
+| Calcul | RTF | 1 h 30 de cours ≈ | Mémoire |
+|---|---|---|---|
+| GPU RTX 3050 Ti, `int8_float16` | 0,04 | ~4 min | 1,2 Go de VRAM |
+| GPU, `float16` | 0,05 | ~4,5 min | 2,2 Go de VRAM |
+| CPU i7-11800H, `int8`, 8 threads | 0,38 | ~34 min | 2,1 Go de RAM |
+| CPU, `int8`, 4 / 12 threads | 0,51 / 0,39 | ~46 / ~35 min | 2,0 / 2,1 Go de RAM |
+
+Le worker gère le repli : si le GPU échoue en cours de transcription (`GpuError`), le moteur
+repasse sur CPU et le job reprend depuis son dernier checkpoint, sans intervention.
 
 Le décodage est calibré pour du cours technique (`best_of=5`, température en cascade,
 `hallucination_silence_threshold=2.0` contre le texte inventé sur les silences d'amphi).
@@ -97,6 +109,29 @@ Deux leviers, par matière :
   ```
 
 Les termes utilisés sont recopiés dans `meta.json` (`engine.hotwords`).
+
+## Retranscrire un cours déjà livré
+
+Bouton **Retranscrire** sur un cours terminé de la file d'attente (confirmation demandée).
+Utile après un changement de moteur (GPU, modèle, vocabulaire) ou pour un cours importé depuis
+OneDrive. Le worker lit directement l'archive audio du cours (`audio.flac`) : aucune copie ni
+décodage préalable. Il passe ensuite par la même chaîne qu'un cours neuf (normalisation de la
+parole en WAV temporaire, supprimé à la fin, puis Whisper), et :
+
+- **remplace** `transcript.md` et `meta.json` (`engine` mis à jour, `retranscribed_at` ajouté) ;
+- **supprime l'ancien `resume.md`** ; Gemini le refait, puis met à jour l'index des thèmes
+  (les anciens passages du cours sont écartés de `INDEX.md`) ;
+- ne **réécrit jamais l'archive audio**.
+
+Le dossier de travail est `.staging\retrans_<id>` (un fichier `retranscribe.json` qui pointe
+vers l'audio). En ligne de commande, pour préparer un cours **en pause** (lancement par
+« ▶ Reprendre ») :
+
+```powershell
+.\.venv\Scripts\python -m amphi.library.retranscribe              # liste les cours
+.\.venv\Scripts\python -m amphi.library.retranscribe 8 --pause    # prépare le n° 8, en pause
+.\.venv\Scripts\python -m amphi.library.retranscribe 8            # prépare et lance
+```
 
 ## Audio archivé
 

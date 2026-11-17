@@ -50,6 +50,7 @@ class QueueItem(QFrame):
     open_folder = Signal(str)
     retry = Signal(int)
     retry_summary = Signal(int)
+    retranscribe = Signal(int)
     remove = Signal(int)
     pause = Signal(int)
     resume = Signal(int)
@@ -149,6 +150,8 @@ class QueueItem(QFrame):
         if r.status == Status.INDEX_FAILED:
             # même relance : resume.md existe déjà, seul l'index est refait
             self._btn("Relancer l'index", lambda: self.retry_summary.emit(r.id))
+        if r.status in (Status.DONE, Status.SUMMARY_FAILED, Status.INDEX_FAILED) and r.target_dir:
+            self._btn("Retranscrire", lambda: self.retranscribe.emit(r.id))
         if r.status == Status.TRANSCRIBE_FAILED:
             self._btn("Réessayer", lambda: self.retry.emit(r.id))
             self._btn("Retirer", lambda: self.remove.emit(r.id))
@@ -167,6 +170,7 @@ class QueuePane(QFrame):
     open_folder_requested = Signal(str)
     retry_requested = Signal(int)
     retry_summary_requested = Signal(int)
+    retranscribe_requested = Signal(int)
     remove_requested = Signal(int)
     pause_requested = Signal(int)
     resume_requested = Signal(int)
@@ -285,6 +289,7 @@ class QueuePane(QFrame):
             w.open_folder.connect(self.open_folder_requested)
             w.retry.connect(self.retry_requested)
             w.retry_summary.connect(self.retry_summary_requested)
+            w.retranscribe.connect(self.retranscribe_requested)
             w.remove.connect(self.remove_requested)
             w.pause.connect(self.pause_requested)
             w.resume.connect(self.resume_requested)

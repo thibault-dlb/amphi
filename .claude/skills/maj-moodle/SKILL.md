@@ -10,7 +10,7 @@ d'Amphi : il lit Moodle (lecture seule, **campus Paris uniquement**), compare av
 local et un registre `.moodle_sync.json`, propose un rangement, puis télécharge.
 
 - **Dossier des cours** = `<chemin des cours des Réglages d'Amphi>\<niveau>` (aujourd'hui
-  `C:\Users\thibd\OneDrive\Cours\B3`) — jamais codé en dur ; `--root` pour forcer.
+  `C:\Users\ThibaultTripierdeLau\OneDrive\Cours\B3`) — jamais codé en dur ; `--root` pour forcer.
 - **Amphi** est trouvé via `AMPHI_DIR`, sinon le dépôt qui contient ce skill, sinon `~/Amphi`.
   Le token Moodle est celui d'Amphi (`<Amphi>\.moodle_token`).
 - Le skill est fourni avec Amphi (`.claude/skills/maj-moodle/`) et en

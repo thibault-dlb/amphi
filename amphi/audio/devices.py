@@ -1,7 +1,8 @@
 """Sélection du micro d'entrée.
 
-Par défaut : le micro intégré du ZenBook (« … microphones numériques »), repéré
-par correspondance de nom, avec repli sur le périphérique d'entrée par défaut.
+Par défaut : le périphérique d'entrée par défaut de Windows (sur le XPS 15 :
+« Microphone (Realtek(R) Audio) »). Un nom partiel peut être imposé via
+`mic_name_hint` (Réglages), avec repli sur ce périphérique par défaut.
 """
 
 from __future__ import annotations
@@ -51,7 +52,7 @@ def _default_input_index() -> int | None:
 
 
 def pick_microphone(
-    name_hint: str = "microphones numériques", override_index: int | None = None
+    name_hint: str = "", override_index: int | None = None
 ) -> InputDevice:
     """Renvoie le périphérique à utiliser. Lève RuntimeError si aucune entrée."""
     devices = list_input_devices()

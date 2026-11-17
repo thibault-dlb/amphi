@@ -24,6 +24,7 @@ import psutil
 
 from ..audio import encode
 from ..config import Config
+from ..library.retranscribe import RETRANSCRIBE_MARK
 from ..library.store import Recording, Store
 from ..logging_setup import setup
 from ..models import RecordingMeta, Status
@@ -31,13 +32,29 @@ from ..paths import FORCE_BATTERY_FLAG, RECORDING_FLAG, WORKER_LOCK, WORKER_STOP
 from ..power import on_ac_power
 from . import summarize as summ
 from . import themes
-from .engine import Segment, TranscriptionInterrupted, WhisperEngine
+from .engine import GpuError, Segment, TranscriptionInterrupted, WhisperEngine
 from .markdown import build_transcript_md
 
 log = logging.getLogger(__name__)
 
 IDLE_EXIT_S = 180.0
 BATTERY_POLL_S = 20.0
+
+# Retranscription (library/retranscribe.py) : le dossier de travail contient RETRANSCRIBE_MARK,
+# {"audio": "<archive audio du cours>"}. Le worker lit alors cet audio au lieu de capture.wav,
+# ne ré-archive pas l'audio (l'original n'est jamais réécrit) et remplace transcript.md,
+# resume.md et l'entrée de l'index.
+
+
+def _retranscribe_source(work: Path | None) -> Path | None:
+    """Audio d'archive à retranscrire si `work` est un dossier de retranscription, sinon None."""
+    if work is None:
+        return None
+    try:
+        data = json.loads((work / RETRANSCRIBE_MARK).read_text(encoding="utf-8"))
+        return Path(data["audio"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -135,6 +152,9 @@ def _make_engine(cfg: Config) -> WhisperEngine:
         cpu_threads=e.cpu_threads,
         beam_size=e.beam_size,
         vad_filter=e.vad_filter,
+        device=e.device,
+        gpu_compute_type=e.gpu_compute_type,
+        gpu_index=e.gpu_index,
     )
 
 
@@ -170,10 +190,23 @@ def _transcribe(
     job: Recording, cfg: Config, store: Store, engine: WhisperEngine, work: Path,
     tick: Callable[[], None] | None = None,
 ) -> None:
+    """Transcrit un job. Si le GPU lâche en cours de route, le moteur est déjà repassé
+    sur CPU : on relance une fois, la reprise se fait depuis le checkpoint."""
+    try:
+        _transcribe_once(job, cfg, store, engine, work, tick)
+    except GpuError:
+        log.warning("Job %d : GPU en échec, reprise sur CPU depuis le checkpoint", job.id)
+        _transcribe_once(job, cfg, store, engine, work, tick)
+
+
+def _transcribe_once(
+    job: Recording, cfg: Config, store: Store, engine: WhisperEngine, work: Path,
+    tick: Callable[[], None] | None = None,
+) -> None:
     store.set_status(job.id, Status.TRANSCRIBING)
-    capture = work / "capture.wav"
+    capture = _retranscribe_source(work) or work / "capture.wav"
     if not capture.exists():
-        raise FileNotFoundError(f"capture.wav introuvable dans {work}")
+        raise FileNotFoundError(f"audio introuvable : {capture}")
 
     jsonl = work / "segments.jsonl"
     done = _read_jsonl(jsonl)
@@ -255,7 +288,7 @@ def _transcribe(
     segments = [Segment(**d) for d in _read_jsonl(jsonl)]
     meta = job.meta()
     meta.duree_s = duration or seen_end
-    engine_desc = f"faster-whisper {cfg.engine.model} ({cfg.engine.compute_type})"
+    engine_desc = engine.describe()
     (work / "transcript.md").write_text(
         build_transcript_md(meta, segments, engine_desc=engine_desc), encoding="utf-8"
     )
@@ -263,23 +296,42 @@ def _transcribe(
     log.info("Transcription terminée (job %d, %d segments)", job.id, len(segments))
 
 
-def _finalize(job: Recording, cfg: Config, store: Store, work: Path, target: Path) -> None:
+def _finalize(
+    job: Recording, cfg: Config, store: Store, work: Path, target: Path,
+    engine: WhisperEngine | None = None,
+) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    audio_path = encode.archive_audio(work / "capture.wav", target, cfg.keep_audio_format)
+    source = _retranscribe_source(work)  # None = enregistrement normal
+    if source is None:
+        audio_path = encode.archive_audio(work / "capture.wav", target, cfg.keep_audio_format)
+    else:
+        audio_path = source  # retranscription : l'archive audio n'est jamais réécrite
 
     transcript_target = target / "transcript.md"
     shutil.copy2(work / "transcript.md", transcript_target)
+    if source is not None:
+        # l'ancien résumé décrit l'ancien transcript : il est remplacé (Gemini le refait,
+        # puis l'index — merge_course écarte les anciens passages de ce cours)
+        (target / "resume.md").unlink(missing_ok=True)
 
     from .. import __version__
 
     meta = job.meta()
-    meta.duree_s = job.duree_s or encode.probe_duration(work / "capture.wav") or meta.duree_s
+    meta.duree_s = (
+        job.duree_s or encode.probe_duration(source or work / "capture.wav") or meta.duree_s
+    )
     meta.app_version = __version__
     payload = asdict(meta)
     job_hotwords = cfg.matiere_vocabulaire(job.matiere, job.niveau)
     payload["engine"] = {
         "model": cfg.engine.model,
-        "compute_type": cfg.engine.compute_type,
+        # périphérique réellement utilisé (le moteur peut être retombé sur CPU)
+        "device": (engine.active_device if engine and engine.active_device else cfg.engine.device),
+        "compute_type": (
+            engine.active_compute_type
+            if engine and engine.active_compute_type
+            else cfg.engine.compute_type
+        ),
         "cpu_threads": cfg.engine.cpu_threads,
         "beam_size": cfg.engine.beam_size,
         "hotwords": job_hotwords,
@@ -288,6 +340,8 @@ def _finalize(job: Recording, cfg: Config, store: Store, work: Path, target: Pat
         "condition_on_previous_text": not bool(job_hotwords),
     }
     payload["finalized_at"] = time.time()
+    if source is not None:
+        payload["retranscribed_at"] = payload["finalized_at"]
     (target / "meta.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -439,10 +493,11 @@ def _process(
             raise TranscriptionInterrupted  # pause demandée pile avant le démarrage
         _transcribe(job, cfg, store, engine, work, tick)
 
-    if not (target / "transcript.md").exists():
+    # retranscription : on livre toujours, même si un ancien transcript est déjà dans la cible
+    if _retranscribe_source(work) is not None or not (target / "transcript.md").exists():
         if not work:
             raise FileNotFoundError("staging nettoyé mais transcript absent de la cible")
-        _finalize(job, cfg, store, work, target)  # pose le statut TRANSCRIBED
+        _finalize(job, cfg, store, work, target, engine)  # pose le statut TRANSCRIBED
     elif job.status != Status.TRANSCRIBED:
         store.set_status(job.id, Status.TRANSCRIBED)  # reprise après crash post-livraison
 

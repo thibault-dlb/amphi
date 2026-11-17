@@ -10,15 +10,16 @@ Documentation détaillée : [`docs/`](docs/README.md).
 ## Installation
 
 ```powershell
-cd C:\Users\thibd\Amphi
+cd $env:USERPROFILE\amphi
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 Options : `-Quick` (benchmark court), `-SkipBenchmark`, `-SkipModel`.
 
-Le script crée `.venv`, installe les dépendances, télécharge le modèle
-(`large-v3-turbo`, ~1,6 Go), mesure la vitesse sur la machine, et pose un raccourci
-**Amphi** sur le Bureau et dans le menu Démarrer.
+Le script crée `.venv`, installe les dépendances (dont cuBLAS/cuDNN pour le GPU, via pip :
+pas de toolkit CUDA ni de droits administrateur), télécharge le modèle (`large-v3-turbo`,
+~1,6 Go), mesure la vitesse GPU et CPU sur la machine, et pose un raccourci **Amphi** sur le
+Bureau et dans le menu Démarrer.
 
 ## Premier lancement
 
@@ -57,18 +58,23 @@ Enregistrement / File d'attente côte à côte), ou à la dernière position enr
 lance **quand le laptop est sur secteur** ; sur batterie elle se met en pause et
 reprend au branchement, sans reperdre le travail déjà fait.
 
-### Vitesse (mesurée sur ce ZenBook, échantillon de français technique)
+### Vitesse (mesurée sur le XPS 15, `large-v3-turbo`, beam 5, échantillon de français technique de 55 s)
 
-| Modèle | RTF | 1 h 30 de cours ≈ | Transcription |
+| Calcul | RTF | 1 h 30 de cours ≈ | Mémoire |
 |---|---|---|---|
-| `large-v3-turbo` (**défaut**, int8/8t) | **0,74** | **~1 h de calcul** | identique à large-v3 sur ce test |
-| `large-v3` (int8/4t) | 3,1 | ~4 h 40 de calcul | reprend l'avantage sur audio difficile |
+| **GPU RTX 3050 Ti, `int8_float16`** (**défaut mesuré**) | **0,04** (22,9× temps réel) | **~4 min** | 1,2 Go de VRAM |
+| GPU RTX 3050 Ti, `float16` | 0,05 (20,4×) | ~4,5 min | 2,2 Go de VRAM |
+| CPU i7-11800H, `int8`, 8 threads (repli) | 0,38 (2,65×) | ~34 min | 2,1 Go de RAM |
+| CPU, `int8`, 4 threads | 0,51 (1,96×) | ~46 min | 2,0 Go de RAM |
+| CPU, `int8`, 12 threads | 0,39 (2,55×) | ~35 min | 2,1 Go de RAM |
 
-Pas de GPU/NPU exploitable → tout est sur CPU. `large-v3` était le choix initial mais a
-été écarté au vu des mesures : sur du cours d'ingénierie il produit le même texte que
-turbo pour 4× le temps. Bascule en un clic dans Réglages > Micro & moteur si tu veux le
-maximum de robustesse sur un enregistrement bruité. Baisser le *beam size* à 1–2
-accélère encore (léger coût en précision).
+Le GPU est ~9× plus rapide que le CPU. Le calcul est en **Auto** : GPU NVIDIA s'il est
+utilisable, sinon CPU, avec repli automatique si CUDA échoue (au chargement du modèle ou en
+cours de route : la transcription reprend alors sur CPU depuis son checkpoint). Réglages >
+Micro & moteur > Calcul permet de forcer GPU ou CPU. Avec 4 Go de VRAM, `large-v3` n'est
+envisageable qu'en `int8_float16` (non mesuré ici) ; `large-v3-turbo` reste le choix par
+défaut (même texte sur du cours d'ingénierie). Baisser le *beam size* à 1–2 accélère encore
+(léger coût en précision).
 
 Résultat dans `OneDrive\Cours\<Niveau>\<Matière>\Enregistrements\<date>_<titre>\` :
 

@@ -160,6 +160,54 @@ class Store:
         self._con.commit()
         return int(cur.lastrowid)
 
+    def add_imported(
+        self,
+        meta: RecordingMeta,
+        *,
+        target_dir: Path,
+        status: str,
+        audio_path: Path | None,
+        transcript_path: Path | None,
+        resume_path: Path | None,
+        engine: dict[str, Any],
+        created_at: float = 0.0,
+        stage: str = "",
+    ) -> int:
+        """Ligne pour un cours déjà livré (cf. library.importer).
+
+        `staging_dir` est volontairement vide : l'interface le supprime (rmtree) quand on
+        retire une ligne, il ne doit jamais désigner un dossier de cours."""
+        now = time.time()
+        markers = json.dumps(
+            [{"offset_s": m.offset_s, "label": m.label, "note": m.note} for m in meta.markers],
+            ensure_ascii=False,
+        )
+        cur = self._con.execute(
+            """INSERT INTO recordings
+               (created_at, updated_at, status, titre, matiere, niveau, date, langue,
+                duree_s, sample_rate, markers_json, staging_dir, target_dir, audio_path,
+                transcript_path, resume_path, progress, stage, engine_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                created_at or now, now, status, meta.titre, meta.matiere, meta.niveau,
+                meta.date, meta.langue, meta.duree_s, meta.sample_rate, markers, "",
+                str(target_dir),
+                str(audio_path) if audio_path else "",
+                str(transcript_path) if transcript_path else "",
+                str(resume_path) if resume_path else "",
+                1.0, stage, json.dumps(engine, ensure_ascii=False),
+            ),
+        )
+        self._con.commit()
+        return int(cur.lastrowid)
+
+    def target_dirs(self) -> list[str]:
+        """Dossiers de livraison déjà connus (pour ne pas importer deux fois)."""
+        rows = self._con.execute(
+            "SELECT target_dir FROM recordings WHERE target_dir IS NOT NULL AND target_dir != ''"
+        ).fetchall()
+        return [r[0] for r in rows]
+
     def update(self, rec_id: int, **fields: Any) -> None:
         if not fields:
             return

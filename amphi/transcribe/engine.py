@@ -1,5 +1,5 @@
-"""Backend de transcription. Interface volontairement fine pour rester interchangeable
-(un backend OpenVINO/iGPU pourrait s'y brancher si le CPU décevait au benchmark).
+"""Backend de transcription faster-whisper (CTranslate2) : GPU NVIDIA (CUDA) si disponible,
+sinon CPU. Interface volontairement fine pour rester interchangeable.
 """
 
 from __future__ import annotations
@@ -9,11 +9,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator
 
+from . import cuda
+
 log = logging.getLogger(__name__)
+
+DEVICES = ("auto", "cuda", "cpu")  # auto = GPU si utilisable, sinon CPU
 
 
 class TranscriptionInterrupted(RuntimeError):
     """Levée quand should_cancel() passe à True (ex. passage sur batterie)."""
+
+
+class GpuError(RuntimeError):
+    """Le GPU a échoué en cours de transcription (mémoire saturée, pilote…).
+
+    Le moteur est déjà repassé sur CPU : l'appelant peut relancer, la reprise se fait
+    depuis le dernier checkpoint."""
 
 
 @dataclass
@@ -55,35 +66,82 @@ class WhisperEngine:
         cpu_threads: int = 4,
         beam_size: int = 5,
         vad_filter: bool = True,
+        device: str = "auto",
+        gpu_compute_type: str = "float16",
+        gpu_index: int = 0,
     ) -> None:
         self.model_name = model_name
-        self.compute_type = compute_type
+        self.compute_type = compute_type          # quantification utilisée sur CPU
         self.cpu_threads = cpu_threads
         self.beam_size = beam_size
         self.vad_filter = vad_filter
+        self.device = device if device in DEVICES else "auto"
+        self.gpu_compute_type = gpu_compute_type  # quantification utilisée sur GPU
+        self.gpu_index = gpu_index
+        self.active_device = ""                   # "cuda" | "cpu" une fois le modèle chargé
+        self.active_compute_type = ""
         self._model = None
+        self._gpu_failed = False                  # GPU abandonné pour la vie de ce moteur
 
     # -- chargement paresseux (télécharge le modèle au 1er appel) ----------
     def ensure_loaded(self) -> None:
         if self._model is not None:
             return
+        if self.device != "cpu" and not self._gpu_failed:
+            ok, why = cuda.usable()
+            if ok:
+                try:
+                    self._load("cuda", self.gpu_compute_type)
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    if self.device == "cuda":
+                        raise
+                    self._gpu_failed = True
+                    log.warning("GPU inutilisable (%s) — repli sur le CPU.", exc)
+            elif self.device == "cuda":
+                raise RuntimeError(f"GPU demandé mais indisponible : {why}")
+            else:
+                log.info("Pas de GPU exploitable (%s) — CPU.", why)
+        self._load("cpu", self.compute_type)
+
+    def _load(self, device: str, compute_type: str) -> None:
         from faster_whisper import WhisperModel
 
-        log.info(
-            "Chargement du modèle %s (%s, %d threads)…",
-            self.model_name, self.compute_type, self.cpu_threads,
-        )
-        self._model = WhisperModel(
-            self.model_name,
-            device="cpu",
-            compute_type=self.compute_type,
-            cpu_threads=self.cpu_threads,
-            num_workers=1,
-        )
-        log.info("Modèle prêt.")
+        if device == "cuda":
+            log.info("Chargement du modèle %s sur GPU (%s)…", self.model_name, compute_type)
+            model = WhisperModel(
+                self.model_name,
+                device="cuda",
+                device_index=self.gpu_index,
+                compute_type=compute_type,
+                num_workers=1,
+            )
+        else:
+            log.info(
+                "Chargement du modèle %s sur CPU (%s, %d threads)…",
+                self.model_name, compute_type, self.cpu_threads,
+            )
+            model = WhisperModel(
+                self.model_name,
+                device="cpu",
+                compute_type=compute_type,
+                cpu_threads=self.cpu_threads,
+                num_workers=1,
+            )
+        self._model = model
+        self.active_device = device
+        self.active_compute_type = compute_type
+        log.info("Modèle prêt (%s, %s).", device, compute_type)
 
     def unload(self) -> None:
         self._model = None
+        self.active_device = ""
+        self.active_compute_type = ""
+
+    def describe(self) -> str:
+        """Ex. « faster-whisper large-v3-turbo (GPU, float16) » — pour transcript.md."""
+        where = "GPU" if self.active_device == "cuda" else "CPU"
+        return f"faster-whisper {self.model_name} ({where}, {self.active_compute_type})"
 
     # -- transcription -------------------------------------------------------
     def transcribe(
@@ -130,15 +188,26 @@ class WhisperEngine:
         )
 
         def _iter() -> Iterator[Segment]:
-            for s in raw_segments:
-                if should_cancel is not None and should_cancel():
-                    raise TranscriptionInterrupted
-                text = (s.text or "").strip()
-                if not text:
-                    continue
-                seg = Segment(start=float(s.start), end=float(s.end), text=text)
-                if on_segment is not None:
-                    on_segment(seg)
-                yield seg
+            try:
+                for s in raw_segments:
+                    if should_cancel is not None and should_cancel():
+                        raise TranscriptionInterrupted
+                    text = (s.text or "").strip()
+                    if not text:
+                        continue
+                    seg = Segment(start=float(s.start), end=float(s.end), text=text)
+                    if on_segment is not None:
+                        on_segment(seg)
+                    yield seg
+            except TranscriptionInterrupted:
+                raise
+            except RuntimeError as exc:
+                # CTranslate2 signale les erreurs CUDA (mémoire, pilote, DLL) en RuntimeError.
+                if self.active_device != "cuda" or self.device == "cuda":
+                    raise
+                log.warning("Erreur GPU en cours de transcription (%s) — bascule sur CPU.", exc)
+                self._gpu_failed = True
+                self.unload()
+                raise GpuError(str(exc)) from exc
 
         return _iter(), tinfo

@@ -16,12 +16,17 @@ from .paths import CONFIG_PATH, default_courses_root
 
 @dataclass
 class EngineConfig:
-    # large-v3-turbo : ~2x plus rapide que large-v3 sur ce CPU, précision identique
-    # sur du cours d'ingénierie (mesuré). large-v3 reste sélectionnable dans les Réglages.
+    # large-v3-turbo : ~2x plus rapide que large-v3, précision identique sur du cours
+    # d'ingénierie (mesuré). large-v3 reste sélectionnable dans les Réglages.
     model: str = "large-v3-turbo"
-    # compute_type / cpu_threads : renseignés par tools/benchmark.py sur cette machine.
+    # Où tourne Whisper : "auto" = GPU NVIDIA (CUDA) s'il est utilisable, sinon CPU ;
+    # "cuda" = GPU obligatoire (erreur sinon) ; "cpu" = jamais le GPU.
+    device: str = "auto"
+    gpu_compute_type: str = "float16"   # float16 | int8_float16 (moins de VRAM) | float32
+    gpu_index: int = 0                  # n° du GPU CUDA (0 = le seul sur un portable)
+    # compute_type / cpu_threads : repli CPU, renseignés par tools/benchmark.py.
     compute_type: str = "int8"          # int8 | int8_float32 | float32
-    cpu_threads: int = 4                # 4 cœurs physiques ; le benchmark tranche
+    cpu_threads: int = 8                # 8 cœurs physiques (i7-11800H) ; le benchmark tranche
     beam_size: int = 5
     vad_filter: bool = True
     word_timestamps: bool = True
@@ -79,7 +84,7 @@ class Config:
     recordings_subdir: str = "Enregistrements"    # sous <niveau>/<matière>/
 
     # --- audio ---------------------------------------------------------------
-    mic_name_hint: str = "microphones numériques"
+    mic_name_hint: str = ""                      # sous-chaîne du nom ; vide = micro par défaut de Windows
     mic_device_id: int | None = None             # override explicite (sinon: heuristique)
     mic_gain_db: float = 0.0                     # amplification numérique à la capture (0..24)
     keep_audio_format: str = "flac"              # flac | wav | opus | none

@@ -21,7 +21,11 @@ Premier réflexe : les journaux dans `logs\` — `amphi.log` (interface, synchro
 | « échec transcription » | lire l'erreur dans la file et `worker.log`, puis « Réessayer » |
 | Texte inventé sur les silences | vérifier que `vad_filter` est actif |
 | Termes techniques mal transcrits | ajouter `vocabulaire.txt` ou un prompt de matière (voir [transcription.md](transcription.md)) |
-| Trop lent | garder `large-v3-turbo`, baisser `beam_size`, relancer le benchmark |
+| Trop lent | garder `large-v3-turbo`, baisser `beam_size`, relancer le benchmark ; vérifier dans `worker.log` que le modèle est chargé « sur GPU » |
+| `worker.log` : « Pas de GPU exploitable … — CPU » | la ligne indique pourquoi : wheels `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` absents (`pip install -r requirements.txt`), pilote NVIDIA trop ancien ou absent |
+| `worker.log` : « GPU inutilisable … — repli sur le CPU » | le modèle n'a pas pu se charger sur le GPU (souvent mémoire saturée : 4 Go de VRAM) ; fermer les applications gourmandes, ou `gpu_compute_type` = `int8_float16`, ou `model` plus petit |
+| `worker.log` : « Erreur GPU en cours de transcription … bascule sur CPU » | CUDA a échoué en route ; le job reprend seul sur CPU depuis son checkpoint. Si ça se répète, mettre `device` à `cpu` ou mettre à jour le pilote |
+| « GPU demandé mais indisponible » | `device` vaut `cuda` et le GPU est inutilisable : repasser sur `auto`, ou corriger la cause indiquée dans le message |
 
 ## Résumé et index
 

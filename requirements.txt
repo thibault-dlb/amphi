@@ -1,7 +1,7 @@
-# Amphi — dépendances (Python 3.11, Windows, CPU uniquement)
-# Installé dans C:\Users\thibd\Amphi\.venv par install.ps1
+# Amphi — dépendances (Python 3.11+, Windows ; GPU NVIDIA/CUDA 12 facultatif)
+# Installé dans <dossier du projet>\.venv par install.ps1
 
-faster-whisper==1.2.1     # transcription (CTranslate2, int8 AVX-512 VNNI)
+faster-whisper==1.2.1     # transcription (CTranslate2 : CPU int8, ou GPU CUDA float16)
 av>=15,<17               # PyAV : faster-whisper 1.2.1 casse avec av 17+ (metadata_errors)
 PySide6==6.11.2           # interface Qt
 sounddevice==0.5.6        # capture micro (PortAudio / WASAPI)
@@ -13,3 +13,9 @@ httpx==0.28.1             # API REST Moodle (devoirs)
 caldav==3.4.0             # agenda iCloud (CalDAV) pour les devoirs Moodle
 icalendar==7.3.0          # construction des événements iCal
 keyring==25.7.0           # mot de passe d'app Apple dans le Gestionnaire d'identifiants Windows
+
+# Bibliothèques CUDA pour CTranslate2 (≥ 4.5 : CUDA 12 + cuDNN 9). Elles évitent d'installer
+# le toolkit CUDA complet ; seul le pilote NVIDIA est requis. Sans GPU NVIDIA, elles restent
+# inutilisées (~1 Go sur disque) : retirer ces deux lignes pour un venv CPU seul.
+nvidia-cublas-cu12        # cuBLAS (produits matriciels)
+nvidia-cudnn-cu12==9.*    # cuDNN 9 (convolutions de l'encodeur Whisper)

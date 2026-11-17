@@ -2,7 +2,7 @@
   Installe Amphi : venv, dependances, modele Whisper, icone, benchmark, raccourcis.
 
     powershell -ExecutionPolicy Bypass -File install.ps1
-    ... -Quick          benchmark rapide (~4 min au lieu de ~13 min)
+    ... -Quick          benchmark rapide (GPU + un seul essai CPU)
     ... -SkipBenchmark  ne pas lancer le benchmark (a faire depuis les Reglages)
     ... -SkipModel      ne pas pre-telecharger le modele (~3 Go)
 
@@ -27,8 +27,8 @@ function Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 Step "Python"
 $pyExe = $null; $pyArgs = @()
 try {
-    $v = & py -3.11 --version 2>&1
-    if ($v -match "3\.1[1-9]|3\.[2-9][0-9]") { $pyExe = "py"; $pyArgs = @("-3.11") }
+    $v = & py -3 --version 2>&1
+    if ($v -match "3\.1[1-9]|3\.[2-9][0-9]") { $pyExe = "py"; $pyArgs = @("-3") }
 } catch {}
 if (-not $pyExe) {
     try {
@@ -55,6 +55,18 @@ Step "Dependances (quelques minutes)"
 & $VenvPy -m pip install -r (Join-Path $Root "requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw "pip install a echoue." }
 
+# --- 3b. GPU NVIDIA (facultatif : sans lui, tout tourne sur CPU) ----------------
+Step "GPU NVIDIA"
+$smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+if ($smi) {
+    & nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+    Push-Location $Root
+    & $VenvPy -c "from amphi.transcribe import cuda; ok, why = cuda.usable(); print('  CUDA utilisable :', ok, '-', why)"
+    Pop-Location
+} else {
+    Write-Warning "  nvidia-smi absent : pas de GPU NVIDIA, la transcription tournera sur le CPU."
+}
+
 # --- 4. ffmpeg ---------------------------------------------------------
 Step "ffmpeg"
 if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
@@ -77,6 +89,7 @@ if (-not $SkipModel) {
 # --- 7. benchmark -----------------------------------------------
 if (-not $SkipBenchmark) {
     Step "Benchmark sur cette machine"
+    # GPU + CPU (le benchmark saute le GPU s'il n'est pas utilisable)
     $benchArgs = @((Join-Path $Root "tools\benchmark.py"))
     if ($Quick) { $benchArgs += "--quick" }
     & $VenvPy @benchArgs
